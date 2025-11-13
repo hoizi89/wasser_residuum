@@ -33,20 +33,16 @@
     "step": {
       "init": {
         "title": "Erweiterte Optionen",
-        "description": "Die K-Faktoren werden automatisch kalibriert! Nur ändern wenn du weißt was du tust.",
+        "description": "Die K-Faktoren werden automatisch kalibriert und sind in 'sensor.wasser_residuum_k_active' sichtbar.",
         "data": {
-          "k_warm": "K-Faktor Warm (L/K·min)",
-          "k_cold": "K-Faktor Kalt (L/K·min)",
           "t_warm": "Temperatur Warm (°C)",
           "t_cold": "Temperatur Kalt (°C)",
           "clip": "Gradient-Limit (K/min)",
           "max_residuum_l": "Maximales Residuum (L)"
         },
         "data_description": {
-          "k_warm": "Umrechnungsfaktor bei warmer Leitung (≥16°C). Lernt automatisch bei jedem 10L-Tick!",
-          "k_cold": "Umrechnungsfaktor bei kalter Leitung (≤12°C). Lernt automatisch bei jedem 10L-Tick!",
-          "t_warm": "Temperatur-Schwelle für 'warm'. Bei dieser Temperatur wird K-Warm verwendet.",
-          "t_cold": "Temperatur-Schwelle für 'kalt'. Bei dieser Temperatur wird K-Cold verwendet.",
+          "t_warm": "Temperatur-Schwelle für 'warm'. Bei dieser Temperatur wird K-Warm verwendet. K-Warm lernt automatisch!",
+          "t_cold": "Temperatur-Schwelle für 'kalt'. Bei dieser Temperatur wird K-Cold verwendet. K-Cold lernt automatisch!",
           "clip": "Maximaler Temperaturgradient um Überschwingen zu verhindern.",
           "max_residuum_l": "Obergrenze für das Residuum. Sollte bei 10L bleiben."
         }

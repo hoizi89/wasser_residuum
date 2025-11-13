@@ -33,20 +33,16 @@
     "step": {
       "init": {
         "title": "Advanced Options",
-        "description": "K-factors are auto-calibrated! Only change if you know what you're doing.",
+        "description": "K-factors are auto-calibrated and visible in 'sensor.wasser_residuum_k_active'.",
         "data": {
-          "k_warm": "K-Factor Warm (L/K·min)",
-          "k_cold": "K-Factor Cold (L/K·min)",
           "t_warm": "Temperature Warm (°C)",
           "t_cold": "Temperature Cold (°C)",
           "clip": "Gradient Limit (K/min)",
           "max_residuum_l": "Maximum Residuum (L)"
         },
         "data_description": {
-          "k_warm": "Conversion factor for warm pipe (≥16°C). Auto-learns at every 10L tick!",
-          "k_cold": "Conversion factor for cold pipe (≤12°C). Auto-learns at every 10L tick!",
-          "t_warm": "Temperature threshold for 'warm'. K-Warm is used at this temperature.",
-          "t_cold": "Temperature threshold for 'cold'. K-Cold is used at this temperature.",
+          "t_warm": "Temperature threshold for 'warm'. K-Warm is used at this temperature. K-Warm auto-learns!",
+          "t_cold": "Temperature threshold for 'cold'. K-Cold is used at this temperature. K-Cold auto-learns!",
           "clip": "Maximum temperature gradient to prevent overshooting.",
           "max_residuum_l": "Upper limit for residuum. Should stay at 10L."
         }

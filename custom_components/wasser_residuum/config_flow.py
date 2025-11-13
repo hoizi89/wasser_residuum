@@ -55,8 +55,6 @@ class WasserResiduumOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        current_k_warm = self.config_entry.options.get(CONF_K_WARM, DEFAULT_K_WARM)
-        current_k_cold = self.config_entry.options.get(CONF_K_COLD, DEFAULT_K_COLD)
         current_t_warm = self.config_entry.options.get(CONF_T_WARM, DEFAULT_T_WARM)
         current_t_cold = self.config_entry.options.get(CONF_T_COLD, DEFAULT_T_COLD)
         current_clip = self.config_entry.options.get(CONF_CLIP, DEFAULT_CLIP)
@@ -65,22 +63,6 @@ class WasserResiduumOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
-                vol.Required(CONF_K_WARM, default=current_k_warm): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=RANGE_K["min"],
-                        max=RANGE_K["max"],
-                        step=RANGE_K["step"],
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-                vol.Required(CONF_K_COLD, default=current_k_cold): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=RANGE_K["min"],
-                        max=RANGE_K["max"],
-                        step=RANGE_K["step"],
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
                 vol.Required(CONF_T_WARM, default=current_t_warm): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=RANGE_T["min"],

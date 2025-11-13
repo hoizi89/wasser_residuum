@@ -1,0 +1,56 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Wasser-Residuum einrichten",
+        "description": "Konfiguriere die Integration zur Messung des Wasserverbrauchs zwischen 10L-Zählerticks (0-9.9999L).",
+        "data": {
+          "name": "Name",
+          "temp_entity": "Temperatursensor (z.B. DS18B20)",
+          "total_entity": "Wasserzähler (z.B. Hydrus)",
+          "lastsync_entity": "Letztes Sync (optional)",
+          "rssi_entity": "RSSI Signal (optional)",
+          "total_unit": "Einheit des Wasserzählers"
+        },
+        "data_description": {
+          "name": "Name für diese Integration (z.B. 'Küchen-Wasser')",
+          "temp_entity": "Sensor der die Wassertemperatur in der Leitung misst",
+          "total_entity": "Smart-Meter Wasserzähler (zählt in 10L-Schritten)",
+          "lastsync_entity": "Optional: Timestamp des letzten Sync vom Zähler",
+          "rssi_entity": "Optional: RSSI-Signalstärke vom Zähler",
+          "total_unit": "Wähle L wenn dein Zähler in Litern zählt, m³ wenn in Kubikmetern"
+        }
+      }
+    },
+    "error": {
+      "unknown": "Ein unbekannter Fehler ist aufgetreten"
+    },
+    "abort": {
+      "already_configured": "Diese Integration wurde bereits konfiguriert"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Erweiterte Optionen",
+        "description": "Die K-Faktoren werden automatisch kalibriert! Nur ändern wenn du weißt was du tust.",
+        "data": {
+          "k_warm": "K-Faktor Warm (L/K·min)",
+          "k_cold": "K-Faktor Kalt (L/K·min)",
+          "t_warm": "Temperatur Warm (°C)",
+          "t_cold": "Temperatur Kalt (°C)",
+          "clip": "Gradient-Limit (K/min)",
+          "max_residuum_l": "Maximales Residuum (L)"
+        },
+        "data_description": {
+          "k_warm": "Umrechnungsfaktor bei warmer Leitung (≥16°C). Lernt automatisch bei jedem 10L-Tick!",
+          "k_cold": "Umrechnungsfaktor bei kalter Leitung (≤12°C). Lernt automatisch bei jedem 10L-Tick!",
+          "t_warm": "Temperatur-Schwelle für 'warm'. Bei dieser Temperatur wird K-Warm verwendet.",
+          "t_cold": "Temperatur-Schwelle für 'kalt'. Bei dieser Temperatur wird K-Cold verwendet.",
+          "clip": "Maximaler Temperaturgradient um Überschwingen zu verhindern.",
+          "max_residuum_l": "Obergrenze für das Residuum. Sollte bei 10L bleiben."
+        }
+      }
+    }
+  }
+}

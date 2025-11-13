@@ -1,0 +1,56 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Setup Water Residuum",
+        "description": "Configure the integration to measure water consumption between 10L meter ticks (0-9.9999L).",
+        "data": {
+          "name": "Name",
+          "temp_entity": "Temperature Sensor (e.g. DS18B20)",
+          "total_entity": "Water Meter (e.g. Hydrus)",
+          "lastsync_entity": "Last Sync (optional)",
+          "rssi_entity": "RSSI Signal (optional)",
+          "total_unit": "Water Meter Unit"
+        },
+        "data_description": {
+          "name": "Name for this integration (e.g. 'Kitchen Water')",
+          "temp_entity": "Sensor that measures water temperature in the pipe",
+          "total_entity": "Smart meter water counter (counts in 10L steps)",
+          "lastsync_entity": "Optional: Timestamp of last sync from meter",
+          "rssi_entity": "Optional: RSSI signal strength from meter",
+          "total_unit": "Choose L if your meter counts in liters, m³ if in cubic meters"
+        }
+      }
+    },
+    "error": {
+      "unknown": "An unknown error occurred"
+    },
+    "abort": {
+      "already_configured": "This integration has already been configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Advanced Options",
+        "description": "K-factors are auto-calibrated! Only change if you know what you're doing.",
+        "data": {
+          "k_warm": "K-Factor Warm (L/K·min)",
+          "k_cold": "K-Factor Cold (L/K·min)",
+          "t_warm": "Temperature Warm (°C)",
+          "t_cold": "Temperature Cold (°C)",
+          "clip": "Gradient Limit (K/min)",
+          "max_residuum_l": "Maximum Residuum (L)"
+        },
+        "data_description": {
+          "k_warm": "Conversion factor for warm pipe (≥16°C). Auto-learns at every 10L tick!",
+          "k_cold": "Conversion factor for cold pipe (≤12°C). Auto-learns at every 10L tick!",
+          "t_warm": "Temperature threshold for 'warm'. K-Warm is used at this temperature.",
+          "t_cold": "Temperature threshold for 'cold'. K-Cold is used at this temperature.",
+          "clip": "Maximum temperature gradient to prevent overshooting.",
+          "max_residuum_l": "Upper limit for residuum. Should stay at 10L."
+        }
+      }
+    }
+  }
+}

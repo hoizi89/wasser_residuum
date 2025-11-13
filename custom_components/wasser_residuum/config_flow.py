@@ -7,9 +7,11 @@ from homeassistant.helpers import selector
 from .const import (
     DOMAIN, CONF_NAME, CONF_TEMP_ENTITY, CONF_TOTAL_ENTITY,
     CONF_LASTSYNC_ENTITY, CONF_RSSI_ENTITY, CONF_TOTAL_UNIT,
-    CONF_K, CONF_MAX_RES_L,
-    DEFAULT_NAME, DEFAULT_K, DEFAULT_MAX_RES_L, DEFAULT_TOTAL_UNIT,
-    RANGE_K, RANGE_MAX_RES,
+    CONF_K_WARM, CONF_K_COLD, CONF_T_WARM, CONF_T_COLD,
+    CONF_CLIP, CONF_MAX_RES_L,
+    DEFAULT_K_WARM, DEFAULT_K_COLD, DEFAULT_T_WARM, DEFAULT_T_COLD,
+    DEFAULT_CLIP, DEFAULT_MAX_RES_L, DEFAULT_TOTAL_UNIT,
+    RANGE_K, RANGE_T, RANGE_CLIP, RANGE_MAX_RES,
 )
 
 
@@ -53,17 +55,53 @@ class WasserResiduumOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        current_k = self.config_entry.options.get(CONF_K, DEFAULT_K)
+        current_k_warm = self.config_entry.options.get(CONF_K_WARM, DEFAULT_K_WARM)
+        current_k_cold = self.config_entry.options.get(CONF_K_COLD, DEFAULT_K_COLD)
+        current_t_warm = self.config_entry.options.get(CONF_T_WARM, DEFAULT_T_WARM)
+        current_t_cold = self.config_entry.options.get(CONF_T_COLD, DEFAULT_T_COLD)
+        current_clip = self.config_entry.options.get(CONF_CLIP, DEFAULT_CLIP)
         current_max = self.config_entry.options.get(CONF_MAX_RES_L, DEFAULT_MAX_RES_L)
 
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
-                vol.Required(CONF_K, default=current_k): selector.NumberSelector(
+                vol.Required(CONF_K_WARM, default=current_k_warm): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=RANGE_K["min"],
                         max=RANGE_K["max"],
                         step=RANGE_K["step"],
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Required(CONF_K_COLD, default=current_k_cold): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=RANGE_K["min"],
+                        max=RANGE_K["max"],
+                        step=RANGE_K["step"],
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Required(CONF_T_WARM, default=current_t_warm): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=RANGE_T["min"],
+                        max=RANGE_T["max"],
+                        step=RANGE_T["step"],
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Required(CONF_T_COLD, default=current_t_cold): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=RANGE_T["min"],
+                        max=RANGE_T["max"],
+                        step=RANGE_T["step"],
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(CONF_CLIP, default=current_clip): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=RANGE_CLIP["min"],
+                        max=RANGE_CLIP["max"],
+                        step=RANGE_CLIP["step"],
                         mode=selector.NumberSelectorMode.BOX,
                     )
                 ),

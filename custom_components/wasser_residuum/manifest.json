@@ -1,7 +1,7 @@
 {
   "domain": "wasser_residuum",
   "name": "Wasser-Residuum (ΔT→L Kalman)",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "documentation": "https://github.com/hoizi89/wasser_residuum",
   "issue_tracker": "https://github.com/hoizi89/wasser_residuum/issues",
   "requirements": ["numpy>=1.21.0"],

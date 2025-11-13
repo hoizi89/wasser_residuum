@@ -9,7 +9,6 @@ DATA_CTRL: Final[str] = "ctrl"
 
 PLATFORMS: Final[tuple[Platform, ...]] = (
     Platform.SENSOR,
-    Platform.NUMBER,
     Platform.BUTTON,
 )
 

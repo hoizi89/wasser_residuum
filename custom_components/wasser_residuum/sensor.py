@@ -24,6 +24,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         FlowSensor(ctrl, name),
         VolumeSensor(ctrl, name),
         ResiduumSensor(ctrl, name),
+        KWarmSensor(ctrl, name),  # Read-only K-factor for warm water
+        KColdSensor(ctrl, name),  # Read-only K-factor for cold water
         DiagTempRaw(ctrl, name),
         DiagTempFilt(ctrl, name),
         DiagDtUsed(ctrl, name),
@@ -153,6 +155,39 @@ class ResiduumSensor(BaseEntity):
             "max_residuum_l": round(self.ctrl.max_res_l, 3),
             "uncertainty_l": round(getattr(self.ctrl, '_volume_uncertainty', 0.0), 3),
         }
+
+
+class KWarmSensor(BaseEntity):
+    """K-Faktor für warmes Wasser (read-only, auto-kalibriert)."""
+    def __init__(self, ctrl, name: str):
+        super().__init__(
+            ctrl, name, "K Warm",
+            unit="L/K",
+            icon="mdi:thermometer-high",
+            state_class=SensorStateClass.MEASUREMENT,
+            entity_category=EntityCategory.CONFIG,
+        )
+
+    @property
+    def native_value(self) -> float | None:
+        return round(self.ctrl.k_warm, 2)
+
+
+class KColdSensor(BaseEntity):
+    """K-Faktor für kaltes Wasser (read-only, auto-kalibriert)."""
+    def __init__(self, ctrl, name: str):
+        super().__init__(
+            ctrl, name, "K Cold",
+            unit="L/K",
+            icon="mdi:thermometer-low",
+            state_class=SensorStateClass.MEASUREMENT,
+            entity_category=EntityCategory.CONFIG,
+        )
+
+    @property
+    def native_value(self) -> float | None:
+        return round(self.ctrl.k_cold, 2)
+
 
 class DiagKActive(BaseEntity):
     """Aktuell verwendeter K-Faktor (interpoliert)."""

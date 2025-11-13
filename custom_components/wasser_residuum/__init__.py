@@ -280,9 +280,20 @@ class WasserResiduumController:
         delta_volume = flow_l_min * (dt_s / 60.0)
         self._volume_l += delta_volume
         self._volume_uncertainty += abs(delta_volume * 0.12)
+
+        # Volume darf nicht negativ sein
         if self._volume_l < 0:
             _LOGGER.debug("Volume negativ, reset auf 0")
             self._volume_l = 0.0
+
+        # Volume darf nicht mehr als max_res_l über Offset liegen (10L Obergrenze)
+        max_volume_allowed = self._offset_l + self.max_res_l
+        if self._volume_l > max_volume_allowed:
+            _LOGGER.debug(
+                "Volume %.2f L > max %.2f L, cappe auf max (Offset %.2f L + max_res %.1f L)",
+                self._volume_l, max_volume_allowed, self._offset_l, self.max_res_l
+            )
+            self._volume_l = max_volume_allowed
     
     def _convert_total_to_l(self, val: float) -> float:
         return _m3_to_l(val) if self.total_unit == "m3" else float(val)

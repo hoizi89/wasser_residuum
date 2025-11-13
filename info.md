@@ -1,72 +1,52 @@
 # Wasser-Residuum (ΔT→L Kalman)
 
-Präzise Wasserverbrauchsmessung zwischen Zählerticks mittels thermischer Analyse und Kalman-Filter.
+Zeigt **0-9.9999 Liter** zwischen 10L-Zählerticks in Echtzeit an!
 
-## Was macht diese Integration?
+## Was macht das?
 
-Misst den Wasserverbrauch in **Echtzeit** durch Temperaturüberwachung - ohne auf Zählerticks warten zu müssen!
+Dein Wasserzähler zählt nur in 10L-Schritten? Diese Integration zeigt dir **sofort** den aktuellen Verbrauch!
 
-### Prinzip
-```
-Wasserfluss → Temperaturabfall → dT/dt → Durchflussberechnung
-```
+**Prinzip**: Wasserfluss → Temperaturabfall → Durchflussberechnung
 
-## Features
+## 🆕 v0.3.0 - Keine Nacht-Drift mehr!
 
-✅ **Kalman-Filter**: Präzise Temperatur-Gradientenerkennung
-✅ **Dual-K Interpolation**: Automatische Anpassung für warmes/kaltes Wasser
-✅ **Auto-Kalibrierung**: Selbstlernend bei jedem 10L-Tick
-✅ **Baseline-Korrektur**: Kompensiert natürliche Temperaturabkühlung
-✅ **Hydrus-Fusion**: Korreliert mit physischen Zählerticks
-✅ **Niedrige Latenz**: Echtzeit-Anzeige
+- 🌙 Nacht-Modus (22:00-06:00) - 5x strengere Schwellwerte
+- 😴 Deep-Sleep (>2h Ruhe) - 3x strengere Schwellwerte
+- ✅ Flow-Konsistenz - 3 Messungen erforderlich
+- 🤖 Auto-Kalibrierung - Lernt automatisch!
 
-## Voraussetzungen
+## Brauchst du
 
-- Temperatursensor in der Wasserleitung (z.B. DS18B20)
-- Wasserzähler mit Smart Meter Auslesen (z.B. Hydrus)
+- DS18B20 Temperatursensor in der Wasserleitung
+- Smart Meter Wasserzähler (z.B. Hydrus)
 - Home Assistant 2024.1.0+
 
-## Konfiguration
+## Installation
 
-Nach Installation über UI:
-1. **Einstellungen** → **Geräte & Dienste**
-2. **+ Integration hinzufügen**
-3. **Wasser-Residuum** suchen
-4. Temperatursensor und Wasserzähler auswählen
+1. HACS → Integrations → Custom Repository hinzufügen
+2. Nach **Wasser-Residuum** suchen → Installieren
+3. HA neu starten
+4. Integration hinzufügen → Sensor & Zähler wählen
+5. **Fertig!** Auto-Kalibrierung läuft automatisch
 
-### Wichtige Parameter
+## Wichtigste Sensoren
 
-- **K-Warm** (4.0): Umrechnungsfaktor bei warmer Leitung
-- **K-Cold** (8.0): Umrechnungsfaktor bei kalter Leitung
-- **T-Warm** (16°C): Referenztemperatur warm
-- **T-Cold** (12°C): Referenztemperatur kalt
+- **`sensor.wasser_residuum_residuum`** → **0-9.9999L** 🎯
+- `sensor.wasser_residuum_last_flow` → Durchfluss
+- `sensor.wasser_residuum_night_mode` → Nacht-Status
+- `sensor.wasser_residuum_k_active` → K-Faktoren (lernt automatisch!)
 
-Diese werden durch Auto-Kalibrierung automatisch optimiert!
-
-## Entitäten
-
-Nach Setup verfügbar:
-- `sensor.wasser_residuum_residuum` - Verbrauch seit letztem Tick (L)
-- `sensor.wasser_residuum_last_flow` - Aktueller Durchfluss (L/min)
-- `sensor.wasser_residuum_last_dt_dt` - Temperaturgradient (K/min)
-- `number.wasser_residuum_k_warm` - Anpassbar
-- `number.wasser_residuum_k_cold` - Anpassbar
-
-## Quick Start Dashboard
+## Dashboard
 
 ```yaml
 type: gauge
 entity: sensor.wasser_residuum_residuum
 min: 0
 max: 10
-name: Wasser bis Tick
+name: Liter bis Tick
 needle: true
 ```
 
-## Support
-
-Für Fragen und Issues: [GitHub Repository](https://github.com/yourusername/wasser_residuum)
-
 ---
 
-**Hinweis**: Experimentelles Projekt für Forschung und Hobby. Für Abrechnungszwecke nur geeichte Zähler verwenden!
+**Hinweis**: Hobby-Projekt. Für Abrechnungen nur geeichte Zähler!

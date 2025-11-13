@@ -30,6 +30,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         DiagOffset(ctrl, name),
         DiagUncertainty(ctrl, name),
         DiagKActive(ctrl, name),  # NEU
+        DiagNightMode(ctrl, name),  # VERBESSERT v0.3.0
+        DiagDeepSleep(ctrl, name),  # VERBESSERT v0.3.0
     ]
 
     # Optional: LastSync und RSSI
@@ -150,7 +152,6 @@ class ResiduumSensor(BaseEntity):
             "offset_l": round(getattr(self.ctrl, '_offset_l', 0.0), 3),
             "max_residuum_l": round(self.ctrl.max_res_l, 3),
             "uncertainty_l": round(getattr(self.ctrl, '_volume_uncertainty', 0.0), 3),
-            "k_factor": round(self.ctrl.k, 2),
         }
 
 class DiagKActive(BaseEntity):
@@ -244,13 +245,18 @@ class DiagDtUsed(BaseEntity):
 
     @property
     def extra_state_attributes(self):
-        idle_boost = getattr(self.ctrl, "_idle_boost", 1.0)
+        night_mode = getattr(self.ctrl, "_night_mode_active", False)
+        deep_sleep = self.ctrl.deep_sleep_active
+        threshold = -0.006
+        if night_mode:
+            threshold *= 5.0
+        if deep_sleep:
+            threshold *= 3.0
         return {
             "flow_active": getattr(self.ctrl, "_flow_active", False),
-            "idle_boost": round(idle_boost, 2),
-            # hier NICHT mehr auf nicht-existierende Attribute zugreifen:
-            "deadband_enter": round(-0.006 * idle_boost, 4),
-            "deadband_exit": -0.002,
+            "night_mode": night_mode,
+            "deep_sleep": deep_sleep,
+            "current_threshold": round(threshold, 4),
         }
 
 
@@ -362,3 +368,74 @@ class RssiSensor(BaseEntity):
     @property
     def native_value(self):
         return self._rssi
+
+
+# --- VERBESSERT v0.3.0: Nacht-Abkühlungs-Schutz -------------------------------
+
+class DiagNightMode(BaseEntity):
+    """Zeigt an ob Nacht-Modus aktiv ist (strengere Schwellwerte)."""
+    def __init__(self, ctrl, name: str):
+        super().__init__(
+            ctrl, name, "Night Mode",
+            icon="mdi:weather-night",
+            entity_category=EntityCategory.DIAGNOSTIC,
+        )
+
+    @property
+    def native_value(self) -> str:
+        """Gibt 'Active' oder 'Inactive' zurück."""
+        is_active = getattr(self.ctrl, '_night_mode_active', False)
+        return "Active" if is_active else "Inactive"
+
+    @property
+    def icon(self) -> str:
+        """Dynamisches Icon basierend auf Status."""
+        is_active = getattr(self.ctrl, '_night_mode_active', False)
+        return "mdi:weather-night" if is_active else "mdi:white-balance-sunny"
+
+    @property
+    def extra_state_attributes(self):
+        from datetime import datetime
+        now = datetime.now()
+        return {
+            "current_hour": now.hour,
+            "night_hours": "22:00-06:00",
+            "threshold_multiplier": "5x" if getattr(self.ctrl, '_night_mode_active', False) else "1x",
+        }
+
+
+class DiagDeepSleep(BaseEntity):
+    """Zeigt an ob Deep-Sleep-Modus aktiv ist (>2h keine Zapfung)."""
+    def __init__(self, ctrl, name: str):
+        super().__init__(
+            ctrl, name, "Deep Sleep",
+            icon="mdi:sleep",
+            entity_category=EntityCategory.DIAGNOSTIC,
+        )
+
+    @property
+    def native_value(self) -> str:
+        """Gibt 'Active' oder 'Inactive' zurück."""
+        is_active = self.ctrl.deep_sleep_active
+        return "Active" if is_active else "Inactive"
+
+    @property
+    def icon(self) -> str:
+        """Dynamisches Icon basierend auf Status."""
+        is_active = self.ctrl.deep_sleep_active
+        return "mdi:sleep" if is_active else "mdi:sleep-off"
+
+    @property
+    def extra_state_attributes(self):
+        import time
+        last_flow_time = getattr(self.ctrl, '_last_flow_time', None)
+        if last_flow_time:
+            idle_hours = (time.time() - last_flow_time) / 3600.0
+        else:
+            idle_hours = 999.9
+
+        return {
+            "idle_hours": round(idle_hours, 1),
+            "threshold_hours": 2.0,
+            "threshold_multiplier": "3x" if self.ctrl.deep_sleep_active else "1x",
+        }

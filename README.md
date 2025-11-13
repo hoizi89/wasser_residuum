@@ -4,17 +4,29 @@
 [![GitHub Release](https://img.shields.io/github/release/yourusername/wasser_residuum.svg)](https://github.com/yourusername/wasser_residuum/releases)
 [![License](https://img.shields.io/github/license/yourusername/wasser_residuum.svg)](LICENSE)
 
-Eine Home Assistant Integration zur präzisen Messung des Wasserverbrauchs zwischen Zählerticks mittels thermischer Analyse und Kalman-Filter.
+Misst den Wasserverbrauch **zwischen 10L-Zählerticks** (0-9.9999L) in Echtzeit durch Temperaturüberwachung.
 
-## 🌟 Features
+## Was macht die Integration?
 
-- **Kalman-Filter basierte Temperaturanalyse**: Präzise Erkennung von Temperaturgradienten zur Durchflusserkennung
-- **Dual-K Interpolation**: Automatische Anpassung des Umrechnungsfaktors basierend auf Wassertemperatur (warm/kalt)
-- **Auto-Kalibrierung**: Selbstlernende K-Faktoren bei jedem 10L-Tick des Hauptzählers
-- **Baseline-Korrektur**: Kompensiert natürliche Temperaturabkühlung über 12h-Fenster
-- **Hydrus-Fusion**: Korreliert thermische Messungen mit physischen Zählerticks für höhere Genauigkeit
-- **Niedrige Latenz**: Echtzeit-Verbrauchsanzeige ohne Wartezeit auf Zählerticks
-- **Robust**: MAD-basiertes Outlier-Filtering und adaptive Schwellwerte
+Dein Wasserzähler zählt nur in 10L-Schritten? Diese Integration zeigt dir den **aktuellen Verbrauch bis zum nächsten Tick** an!
+
+**Prinzip**: Wasserfluss → Temperaturabfall → Durchflussberechnung
+
+**Genauigkeit**: 0-9.9999 Liter zwischen den fixen 10L-Ticks
+
+## 🆕 Version 0.3.0 - Anti-Nacht-Drift
+
+**Problem gelöst**: Keine falschen Zapfungen mehr durch Nacht-Abkühlung!
+- 🌙 Nacht-Modus (22:00-06:00) - 5x strengere Schwellwerte
+- 😴 Deep-Sleep (>2h Ruhe) - 3x strengere Schwellwerte
+- ✅ Flow-Konsistenz - 3 aufeinanderfolgende Messungen nötig
+
+## 🎯 Features
+
+- **Echtzeit**: Sofortige Anzeige, keine Wartezeit auf Zählerticks
+- **Auto-Kalibrierung**: Lernt bei jedem 10L-Tick automatisch
+- **Dual-K**: Unterscheidet zwischen warmem und kaltem Wasser
+- **Nacht-sicher**: Keine falschen Zapfungen durch Temperatur-Drift
 
 ## 📋 Voraussetzungen
 
@@ -45,155 +57,92 @@ Eine Home Assistant Integration zur präzisen Messung des Wasserverbrauchs zwisc
 
 ## ⚙️ Konfiguration
 
-### Über die UI
+1. **Einstellungen** → **Geräte & Dienste** → **+ Integration hinzufügen**
+2. Suche nach **Wasser-Residuum**
+3. Wähle:
+   - **Temperatursensor** (z.B. DS18B20 in der Leitung)
+   - **Wasserzähler** (z.B. Hydrus)
+   - **Einheit**: m³ oder L
 
-1. Gehe zu **Einstellungen** → **Geräte & Dienste**
-2. Klicke auf **+ Integration hinzufügen**
-3. Suche nach **Wasser-Residuum**
-4. Folge dem Konfigurationsassistenten:
-   - **Name**: Ein beschreibender Name (z.B. "Küchen-Wasser")
-   - **Temperatursensor**: Wähle deinen DS18B20 Sensor
-   - **Wasserzähler**: Wähle deinen Hydrus/Hauptzähler
-   - **Einheit**: m³ oder L (je nach Zähler)
+4. **Fertig!** Die Kalibrierung läuft automatisch.
 
-### Erweiterte Optionen
+### Optionale Anpassung
 
-Nach der Einrichtung kannst du die Integration über **Optionen** konfigurieren:
+Die Standardwerte funktionieren gut. Bei Bedarf über **Optionen** anpassen:
 
-| Parameter | Standard | Bereich | Beschreibung |
-|-----------|----------|---------|--------------|
-| **K-Warm** | 4.0 | 0.5 - 10.0 | Umrechnungsfaktor bei warmer Leitung (≥16°C): `L/min = K × ΔT` |
-| **K-Cold** | 8.0 | 0.5 - 10.0 | Umrechnungsfaktor bei kalter Leitung (≤12°C) |
-| **T-Warm** | 16.0°C | 5.0 - 35.0 | Referenztemperatur für warme Leitung |
-| **T-Cold** | 12.0°C | 5.0 - 35.0 | Referenztemperatur für kalte Leitung |
-| **Clip** | 2.5 K/min | 0.5 - 5.0 | Maximaler Gradient (verhindert Überschwingen) |
-| **Max. Residuum** | 10.0 L | 5.0 - 50.0 | Maximales Residuum (Plausibilitätsgrenze) |
+| Parameter | Standard | Beschreibung |
+|-----------|----------|--------------|
+| **K-Warm** | 4.0 | Umrechnungsfaktor warm (≥16°C) - **lernt automatisch!** |
+| **K-Cold** | 8.0 | Umrechnungsfaktor kalt (≤12°C) - **lernt automatisch!** |
+| **T-Warm/T-Cold** | 16°C / 12°C | Temperatur-Grenzen für Interpolation |
+| **Max. Residuum** | 10.0 L | Obergrenze (sollte bei 10L bleiben) |
 
-## 📊 Entitäten
+## 📊 Wichtigste Sensoren
 
-Die Integration erstellt folgende Entitäten:
+### Was du ansehen solltest:
+- **`sensor.wasser_residuum_residuum`** → **0-9.9999L bis nächster Tick** 🎯
+- `sensor.wasser_residuum_last_flow` → Aktueller Durchfluss (L/min)
+- `sensor.wasser_residuum_night_mode` → Nacht-Modus Status
+- `sensor.wasser_residuum_k_active` → Aktiver K-Faktor + Attribute (K-Warm/K-Cold Werte)
 
-### Sensoren
-- **Residuum (L)**: Geschätzter Verbrauch seit letztem Zählertick
-- **Volume (L)**: Absolutes internes Volumen
-- **Offset (L)**: Referenzpunkt des letzten Zählerticks
-- **Unsicherheit (L)**: Kumulative Messunsicherheit
-- **Letzter Flow (L/min)**: Aktueller Durchfluss (thermisch)
-- **Letztes dT/dt (K/min)**: Temperatur-Gradient (baseline-korrigiert)
-- **K-Effektiv**: Aktuell verwendeter K-Faktor
+### Diagnose (falls was nicht stimmt):
+- `sensor.wasser_residuum_last_dt_dt` → Temperaturgradient + Schwellwert
+- `sensor.wasser_residuum_deep_sleep` → Sleep-Modus Status
+- `sensor.wasser_residuum_temp_filtered` → Gefilterte Temperatur
+- `sensor.wasser_residuum_uncertainty` → Messunsicherheit
 
-### Numbers (anpassbar)
-- **K-Warm**: K-Faktor für warme Leitung
-- **K-Cold**: K-Faktor für kalte Leitung
+### Anpassbar:
+- `number.wasser_residuum_k_warm` / `k_cold` → Manuell ändern (oder Auto-Kalibrierung nutzen!)
+- `button.wasser_residuum_reset` → Reset bei Problemen
 
-### Buttons
-- **Reset Volume**: Setzt Residuum auf 0 zurück (bei Störungen)
+## 🎯 Wie funktioniert's?
 
-## 🎯 Funktionsweise
+1. **Temperatur fällt** bei Wasserfluss → Kalman-Filter erkennt Gradient
+2. **Baseline-Korrektur** → Kompensiert natürliche Nacht-Abkühlung
+3. **K-Faktor** → Rechnet Temperatur-Gradient in L/min um (warm vs. kalt)
+4. **Integration** → Summiert auf bis 10L
+5. **10L-Tick** → Automatische Kalibrierung, Reset auf 0
 
-### 1. Thermische Durchflusserkennung
+**Auto-Kalibrierung**:
 ```
-Wasserfluss → Temperaturabfall → dT/dt < 0 → Flow erkannt
+Bei jedem 10L-Tick: K_neu = K_alt × (10.0 / Thermal_gemessen)
 ```
-
-Die Integration nutzt einen **Kalman-Filter**, um Temperaturgradienten präzise zu schätzen:
-- Predict-Phase: Extrapoliert Temperatur basierend auf bisheriger Dynamik
-- Update-Phase: Korrigiert Schätzung mit neuer Messung
-- Ergebnis: Gefilterte Temperatur `T` und Gradient `dT/dt`
-
-### 2. Baseline-Korrektur (NEU in v0.2.0)
-```
-Baseline = 5. Perzentil der letzten 12h
-Temperatur (relativ) = T - Baseline
-```
-
-Kompensiert natürliche Abkühlung über Nacht. Nur Gradienten **relativ zur Baseline** werden als Flow interpretiert.
-
-### 3. Dual-K Interpolation
-```
-K(T) = K_cold    wenn T ≤ T_cold
-K(T) = K_warm    wenn T ≥ T_warm
-K(T) = linear interpoliert    dazwischen
-```
-
-**Warum?** Warmes Wasser hat höhere Wärmekapazität und Strömungsviskosität → anderer K-Faktor.
-
-### 4. Auto-Kalibrierung bei 10L-Tick
-```
-Hydrus: +10L → K_neu = K_alt × (10.0 / Thermal_gemessen)
-```
-
-Gleicht systematische Fehler automatisch aus. Begrenzt auf ±30% pro Tick (Stabilitätsschutz).
-
-### 5. Hydrus-Fusion
-```
-Zeit seit letztem Tick | Schwellwert
-0-5 min               | -0.001 K/min (hohe Konfidenz)
-5-30 min              | -0.05 K/min  (mittlere Konfidenz)
->30 min               | -0.15 K/min  (niedrige Konfidenz)
-```
-
-**Idee**: Kurz nach einem Zählertick ist thermische Messung besonders zuverlässig (Wasser floss kürzlich).
+→ System lernt automatisch die richtigen Werte!
 
 ## 📈 Beispiel-Dashboard
 
 ```yaml
-type: vertical-stack
-cards:
-  - type: entities
-    title: Wasser-Residuum
-    entities:
-      - entity: sensor.wasser_residuum_residuum
-        name: Residuum
-        icon: mdi:water
-      - entity: sensor.wasser_residuum_last_flow
-        name: Durchfluss
-        icon: mdi:water-pump
-      - entity: sensor.wasser_residuum_last_dt_dt
-        name: Temperaturgradient
-        icon: mdi:thermometer
-
-  - type: history-graph
-    title: Durchfluss Historie
-    entities:
-      - entity: sensor.wasser_residuum_last_flow
-    hours_to_show: 2
-
-  - type: gauge
-    entity: sensor.wasser_residuum_residuum
-    min: 0
-    max: 10
-    name: Residuum bis Tick
-    needle: true
+type: gauge
+entity: sensor.wasser_residuum_residuum
+min: 0
+max: 10
+name: Liter bis 10L-Tick
+needle: true
+segments:
+  - from: 0
+    color: "#0da035"
+  - from: 7
+    color: "#e0b400"
+  - from: 9
+    color: "#db4437"
 ```
 
 ## 🔍 Troubleshooting
 
-### Problem: Residuum steigt bei Stillstand
+### Residuum steigt nachts ohne Zapfung
+✅ **Gelöst in v0.3.0!** Nacht-Modus und Deep-Sleep verhindern das automatisch.
+- Prüfe: `sensor.wasser_residuum_night_mode` und `deep_sleep`
+- Falls noch Probleme: Nacht-Zeitfenster in `__init__.py:143` anpassen
 
-**Ursache**: Natürliche Temperaturabkühlung wird als Flow interpretiert.
+### K-Faktoren passen nicht
+🤖 **Auto-Kalibrierung läuft!** Warte 5-10 Ticks (50-100L), dann sollten die Werte stimmen.
+- Manuell anpassen: `number.wasser_residuum_k_warm` / `k_cold`
+- Typische Werte: K-Warm 3-5, K-Cold 6-9
 
-**Lösung**:
-- Warte 12h, damit Baseline-Korrektur greift
-- Erhöhe `T_cold` (z.B. auf 13°C), damit mehr Gradienten als "kalt = normal" klassifiziert werden
-
-### Problem: Auto-Kalibrierung schießt hoch
-
-**Ursache**: Thermischer Flow zu niedrig (z.B. durch schlechten Sensorpositionierung).
-
-**Lösung**:
-- Überprüfe Sensor-Position (muss im direkten Wasserkontakt sein)
-- Setze `K-Cold` manuell auf realistischen Wert (6.0 - 9.0)
-- Logs prüfen: `custom_components.wasser_residuum`
-
-### Problem: Flow wird nicht erkannt
-
-**Ursache**: Schwellwerte zu streng oder Sensor zu träge.
-
-**Lösung**:
-- Reduziere `Clip` (z.B. auf 1.5 K/min)
-- Prüfe Sensor-Aktualisierungsrate (sollte >1/min sein)
-- Erhöhe `K-Warm` (mehr Sensitivität bei warmer Leitung)
+### Flow wird nicht erkannt
+🔧 **Sensor-Position prüfen!** Muss direkten Wasserkontakt haben.
+- Prüfe: `sensor.wasser_residuum_last_dt_dt` (sollte < -0.03 K/min bei Flow)
+- Sensor-Rate: Mindestens 1x/Minute
 
 ## 📝 Logs
 
@@ -206,23 +155,24 @@ logger:
     custom_components.wasser_residuum: debug
 ```
 
-## 🤝 Beitragen
+## 📋 Changelog
 
-Contributions sind willkommen! Bitte öffne ein Issue oder Pull Request auf GitHub.
+### v0.3.0 - Anti-Nacht-Drift
+- Nacht-Modus + Deep-Sleep mit adaptiven Schwellwerten
+- Flow-Konsistenz-Check (3x aufeinanderfolgend)
+- Gradient-Geschwindigkeit (d²T/dt²) Filter
+- Neue Diagnose-Sensoren: Night Mode, Deep Sleep
+- Code-Aufräumung: Idle-Boost, Alpha, Window_s entfernt
 
-## 📄 Lizenz
+### v0.2.0 - Auto-Kalibrierung
+- Dual-K Interpolation (warm/kalt)
+- Auto-Kalibrierung bei 10L-Ticks
+- Baseline-Korrektur (12h-Fenster)
 
-MIT License - siehe [LICENSE](LICENSE)
-
-## 🙏 Credits
-
-Entwickelt mit ❤️ für die Home Assistant Community.
-
-Basiert auf:
-- Kalman-Filter Theorie (Rudolf E. Kalman, 1960)
-- Thermischer Durchflussmessung (Prinzip: Heiß-/Kaltdrahtanemometrie)
-- Home Assistant Integration Best Practices
+### v0.1.0 - Initial
+- Kalman-Filter Flow-Detektion
+- Config Flow UI
 
 ---
 
-**Hinweis**: Diese Integration ist ein experimentelles Projekt zur Forschung und Hobby-Nutzung. Für offizielle Abrechnungszwecke verwende ausschließlich geeichte Wasserzähler.
+**Hinweis**: Experimentelles Projekt für Hobby-Nutzung. Für Abrechnungen nur geeichte Zähler verwenden!

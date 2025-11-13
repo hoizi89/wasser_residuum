@@ -13,12 +13,12 @@ from homeassistant.const import EVENT_STATE_CHANGED, STATE_UNAVAILABLE, STATE_UN
 
 from .const import (
     DOMAIN, DATA_CTRL, CONF_TEMP_ENTITY, CONF_TOTAL_ENTITY, CONF_TOTAL_UNIT,
-    CONF_K, CONF_K_WARM, CONF_K_COLD, CONF_T_WARM, CONF_T_COLD,
-    CONF_CLIP, CONF_ALPHA, CONF_WINDOW_S, CONF_MAX_RES_L,
-    DEFAULT_K, DEFAULT_K_WARM, DEFAULT_K_COLD, DEFAULT_T_WARM, DEFAULT_T_COLD,
-    DEFAULT_CLIP, DEFAULT_ALPHA, DEFAULT_WINDOW_S, DEFAULT_MAX_RES_L,
+    CONF_K_WARM, CONF_K_COLD, CONF_T_WARM, CONF_T_COLD,
+    CONF_CLIP, CONF_MAX_RES_L,
+    DEFAULT_K_WARM, DEFAULT_K_COLD, DEFAULT_T_WARM, DEFAULT_T_COLD,
+    DEFAULT_CLIP, DEFAULT_MAX_RES_L,
     DEFAULT_TOTAL_UNIT, PLATFORMS,
-    RANGE_K,   # <-- NEU
+    RANGE_K,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -75,18 +75,13 @@ class WasserResiduumController:
         self.total_entity = entry.data[CONF_TOTAL_ENTITY]
         self.total_unit = entry.data.get(CONF_TOTAL_UNIT, DEFAULT_TOTAL_UNIT).lower()
         
-        # Dual-K Parameter
+        # Dual-K Parameter für Warm/Kalt-Interpolation
         self.k_warm = entry.options.get(CONF_K_WARM, DEFAULT_K_WARM)
         self.k_cold = entry.options.get(CONF_K_COLD, DEFAULT_K_COLD)
         self.t_warm = entry.options.get(CONF_T_WARM, DEFAULT_T_WARM)
         self.t_cold = entry.options.get(CONF_T_COLD, DEFAULT_T_COLD)
-        
-        # Legacy K für Rückwärtskompatibilität
-        self.k = entry.options.get(CONF_K, DEFAULT_K)
-        
+
         self.clip = entry.options.get(CONF_CLIP, DEFAULT_CLIP)
-        self.alpha = entry.options.get(CONF_ALPHA, DEFAULT_ALPHA)
-        self.window_s = entry.options.get(CONF_WINDOW_S, DEFAULT_WINDOW_S)
         self.max_res_l = entry.options.get(CONF_MAX_RES_L, DEFAULT_MAX_RES_L)
         
         # Interne Zustände
@@ -98,7 +93,6 @@ class WasserResiduumController:
         self._dt_history = deque(maxlen=15)
         self._flow_active = False
         self._last_flow_time = None
-        self._idle_boost = 1.0
         
         self._volume_l = 0.0
         self._offset_l = 0.0
@@ -109,12 +103,17 @@ class WasserResiduumController:
         self._last_dt_used = None
         self._last_k_used = None
         
-        # NEU: Baseline-Korrektur
-        # Längeres Fenster, damit langsame Nacht-Abkühlung besser als Baseline erkannt wird
-        self._temp_history_6h = deque(maxlen=720)  # 12h bei 1 min/Sample
-        self._temp_history_since_tick = []  # Für K-Kalibrierung
+        # Baseline-Korrektur: 12h-Fenster für langsame Temperaturänderungen
+        self._temp_history_6h = deque(maxlen=720)
+        self._temp_history_since_tick = []
         self._last_temp_relative = None
-        
+
+        # Nacht-Abkühlungs-Schutz
+        self._dt_gradient_history = deque(maxlen=5)
+        self._last_dt_baseline_corrected = None
+        self._flow_confirmation_counter = 0
+        self._night_mode_active = False
+
         self._remove_temp_listener = None
         self._remove_total_listener = None
     
@@ -138,46 +137,67 @@ class WasserResiduumController:
         
         ratio = (current_temp - self.t_cold) / temp_range
         k_interpolated = self.k_cold + ratio * (self.k_warm - self.k_cold)
-        
+
         return max(KMIN, min(KMAX, float(k_interpolated)))
-    
+
+    def _is_night_time(self) -> bool:
+        """Prüft ob aktuell Nacht (22:00-06:00). Strengere Schwellwerte in dieser Zeit."""
+        now = datetime.now()
+        hour = now.hour
+        return hour >= 22 or hour < 6
+
+    def _is_deep_sleep_mode(self) -> bool:
+        """Prüft ob >2h keine Zapfung. Extra-strenge Schwellwerte in diesem Modus."""
+        if self._last_flow_time is None:
+            return True
+        idle_hours = (time.time() - self._last_flow_time) / 3600.0
+        return idle_hours > 2.0
+
     def _calculate_baseline(self) -> float:
-        """
-        NEU: Berechne gleitende Baseline über 12h-Fenster.
-        Verwendet 5. Perzentil als Referenz (niedrigste normale Temperatur).
-        """
-        if len(self._temp_history_6h) < 60:  # Min. 1h Daten
+        """Gleitende Baseline über 12h. Nachts 1. Perzentil, tags 2. Perzentil."""
+        if len(self._temp_history_6h) < 60:
             return self._last_temp if self._last_temp else 15.0
-        
-        # 5. Perzentil eliminiert Ausreißer nach unten
-        baseline = np.percentile(self._temp_history_6h, 5)
+
+        percentile = 1.0 if self._is_night_time() else 2.0
+        baseline = np.percentile(self._temp_history_6h, percentile)
         return float(baseline)
     
-    def _should_accept_thermal_flow(self, dt_baseline_corrected: float) -> bool:
+    def _should_accept_thermal_flow(self, dt_baseline_corrected: float, dt_gradient: float = None) -> bool:
         """
-        NEU: Hydrus-Korrelation als Gatekeeper.
-        Verschärft Schwellwerte basierend auf Zeit seit letztem Hydrus-Tick.
+        Gatekeeper für thermischen Flow. Berücksichtigt Hydrus-Tick-Zeit,
+        Tageszeit, Sleep-Mode und Gradient-Geschwindigkeit.
         """
+        # Basis-Schwellwert abhängig von Zeit seit letztem Hydrus-Tick
         if self._last_hydrus_change_time is None:
-            # Vor erstem Hydrus-Tick: nur sehr große Gradienten
-            return dt_baseline_corrected < -0.10
-        
-        time_since_hydrus = time.time() - self._last_hydrus_change_time
-        
-        # Zone 1: Kurz nach Hydrus-Tick (0-5 min) - hohe Konfidenz
-        if time_since_hydrus < 300:
-            return dt_baseline_corrected < -0.001
-        
-        # Zone 2: Mittlere Zeit (5-30 min) - mittlere Konfidenz
-        elif time_since_hydrus < 1800:
-            return dt_baseline_corrected < -0.05
-        
-        # Zone 3: Lange Ruhezeit (>30 min) - niedrige Konfidenz
+            base_threshold = -0.10
         else:
-            return dt_baseline_corrected < -0.15
+            time_since_hydrus = time.time() - self._last_hydrus_change_time
+            if time_since_hydrus < 300:
+                base_threshold = -0.01
+            elif time_since_hydrus < 1800:
+                base_threshold = -0.08
+            else:
+                base_threshold = -0.20
+
+        # Nacht-Modus: 3x strengerer Schwellwert
+        if self._is_night_time():
+            base_threshold *= 3.0
+            _LOGGER.debug("Nacht-Modus: Schwellwert %.4f", base_threshold)
+
+        # Deep-Sleep: weitere 2x Verschärfung
+        if self._is_deep_sleep_mode():
+            base_threshold *= 2.0
+            _LOGGER.debug("Deep-Sleep: Schwellwert %.4f", base_threshold)
+
+        # Gradient-Check: Stetige Änderungen nachts ablehnen
+        if dt_gradient is not None and abs(dt_gradient) < 0.005 and self._is_night_time():
+            _LOGGER.debug("Stetige Änderung nachts: d²T/dt²=%.6f → abgelehnt", dt_gradient)
+            return False
+
+        return dt_baseline_corrected < base_threshold
     
-    def set_options(self, k_warm=None, k_cold=None, t_warm=None, t_cold=None, 
-                   clip=None, alpha=None, window_s=None, max_res_l=None):
+    def set_options(self, k_warm=None, k_cold=None, t_warm=None, t_cold=None,
+                   clip=None, max_res_l=None):
         if k_warm is not None:
             self.k_warm = k_warm
         if k_cold is not None:
@@ -188,13 +208,9 @@ class WasserResiduumController:
             self.t_cold = t_cold
         if clip is not None:
             self.clip = clip
-        if alpha is not None:
-            self.alpha = alpha
-        if window_s is not None:
-            self.window_s = window_s
         if max_res_l is not None:
             self.max_res_l = max_res_l
-        _LOGGER.info("Options updated: k_warm=%.2f, k_cold=%.2f, t_warm=%.1f°C, t_cold=%.1f°C",
+        _LOGGER.info("Options: k_warm=%.2f, k_cold=%.2f, t_warm=%.1f°C, t_cold=%.1f°C",
                      self.k_warm, self.k_cold, self.t_warm, self.t_cold)
     
     async def _persist_options(self, new_opts: dict):
@@ -247,17 +263,16 @@ class WasserResiduumController:
     @property
     def last_k_eff(self) -> float | None:
         return self._last_k_used
-    
-    def _update_idle_boost(self):
-        """Idle-Boost anpassen, damit bei langen Stillstandsphasen der Filter etwas empfindlicher wird."""
-        if not self._flow_active:
-            if self._last_flow_time is None:
-                self._idle_boost = 1.0
-            else:
-                idle_time = time.time() - self._last_flow_time
-                self._idle_boost = min(3.0, 1.0 + idle_time / 600.0)
-        else:
-            self._idle_boost = 1.0
+
+    @property
+    def night_mode_active(self) -> bool:
+        """Gibt zurück ob Nacht-Modus aktiv ist."""
+        return self._night_mode_active
+
+    @property
+    def deep_sleep_active(self) -> bool:
+        """Gibt zurück ob Deep-Sleep-Modus aktiv ist."""
+        return self._is_deep_sleep_mode()
     
     def _integrate(self, flow_l_min: float, dt_s: float):
         if dt_s <= 0:
@@ -319,23 +334,17 @@ class WasserResiduumController:
             if 9.5 <= delta_l <= 10.5:
                 thermal_measured = self.residuum_l
 
-                # Weniger nacht-empfindliche Auto-Kalibrierung der K-Faktoren:
-                # - nur bei plausiblen Thermalwerten
-                # - Korrektur-Faktor begrenzt
-                # - Änderung pro Tick geglättet
+                # Auto-Kalibrierung: Nur bei plausiblen Werten, begrenzte Änderung
                 if thermal_measured > 1.0 and len(self._temp_history_since_tick) > 0:
                     avg_temp = np.mean(self._temp_history_since_tick)
 
-                    # Nur kalibrieren, wenn der Thermal-Anteil halbwegs zu einem 10L-Tick passt
                     if 4.0 <= thermal_measured <= 16.0:
                         raw_correction = 10.0 / thermal_measured
-                        # max ±30 % Korrektur
-                        correction = max(0.7, min(1.3, raw_correction))
+                        correction = max(0.7, min(1.3, raw_correction))  # Max ±30%
 
                         def _smooth_k(old_k: float, corr: float, kmax_local: float) -> float:
                             target_k = old_k * corr
-                            # max 25 % der Differenz pro Tick anwenden
-                            new_k = old_k + K_ADAPT_MAX_STEP * (target_k - old_k)
+                            new_k = old_k + K_ADAPT_MAX_STEP * (target_k - old_k)  # Max 25% pro Tick
                             return max(KMIN, min(kmax_local, new_k))
 
                         if avg_temp >= self.t_warm:
@@ -367,16 +376,14 @@ class WasserResiduumController:
                             "(zu weit weg vom 10L-Tick)", thermal_measured
                         )
 
-                _LOGGER.info(
-                    "Hydrus 10L-Tick: +%.1f L, Thermal %.3f L → Reset",
-                    delta_l, thermal_measured
-                )
+                _LOGGER.info("Hydrus 10L-Tick: +%.1f L, Thermal %.3f L → Reset",
+                            delta_l, thermal_measured)
 
                 # Reset Residuum und Tracking
                 self._offset_l = self._volume_l
                 self._volume_uncertainty = 0.0
-                self._last_hydrus_change_time = time.time()  # NEU: Timestamp
-                self._temp_history_since_tick = []  # Reset für nächste Kalibrierung
+                self._last_hydrus_change_time = time.time()
+                self._temp_history_since_tick = []
 
             elif delta_l > 10.5:
                 _LOGGER.warning("Hydrus Sprung %.1f L, kein Auto-Reset", delta_l)
@@ -405,8 +412,8 @@ class WasserResiduumController:
         if self._kalman is None:
             self._kalman = SimpleKalman(init_temp=raw_temp)
             self._last_ts = now_ts
-            self._last_temp_relative = 0.0  # NEU: Initialisiere relative Temp
-            _LOGGER.info("Kalman initialisiert bei %.2f °C", raw_temp)
+            self._last_temp_relative = 0.0
+            _LOGGER.info("Kalman init bei %.2f °C", raw_temp)
             self._notify_entities()
             return
         
@@ -417,24 +424,31 @@ class WasserResiduumController:
         self._kalman.predict(dt_s)
         self._kalman.update(raw_temp)
         filt_temp, dt_per_min = self._kalman.get_state()
-        
-        # NEU: Speichere für Baseline-Berechnung und K-Kalibrierung
+
+        # Speichere für Baseline und Auto-Kalibrierung
         self._temp_history_6h.append(filt_temp)
         self._temp_history_since_tick.append(filt_temp)
-        
-        # NEU: Baseline-Korrektur
+
+        # Baseline-Korrektur
         baseline = self._calculate_baseline()
         temp_relative = filt_temp - baseline
-        
-        # Berechne baseline-korrigierten Gradienten
+
+        # Baseline-korrigierter Gradient
         if self._last_temp_relative is not None:
             dt_baseline_corrected = (temp_relative - self._last_temp_relative) / (dt_s / 60.0)
         else:
             dt_baseline_corrected = 0.0
             self._last_temp_relative = temp_relative
-        
+
+        # Gradient-Geschwindigkeit (d²T/dt²)
+        dt_gradient = None
+        if self._last_dt_baseline_corrected is not None:
+            dt_gradient = (dt_baseline_corrected - self._last_dt_baseline_corrected) / (dt_s / 60.0)
+            self._dt_gradient_history.append(dt_gradient)
+
+        self._last_dt_baseline_corrected = dt_baseline_corrected
         self._last_ts = now_ts
-        self._last_dt_used = dt_baseline_corrected  # Zeige korrigierten Wert
+        self._last_dt_used = dt_baseline_corrected
         
         # Historie für MAD-Clipping
         self._dt_history.append(dt_baseline_corrected)
@@ -449,23 +463,43 @@ class WasserResiduumController:
                 )
                 return
         
-        # Idle-Boost & Deadband
-        self._update_idle_boost()
-        threshold_enter = -0.006 * self._idle_boost
+        # Adaptive Schwellwerte basierend auf Tageszeit und Sleep-Mode
+        threshold_enter = -0.006
         threshold_exit = -0.002
-        
+
+        # Nacht-Modus: 5x strengerer Schwellwert
+        if self._is_night_time():
+            threshold_enter *= 5.0
+            self._night_mode_active = True
+        else:
+            self._night_mode_active = False
+
+        # Deep-Sleep: weitere 3x Verschärfung
+        if self._is_deep_sleep_mode():
+            threshold_enter *= 3.0
+
         flow_detected = dt_baseline_corrected < threshold_enter
-        
-        if flow_detected or self._flow_active:
-            if not self._flow_active and flow_detected:
+
+        # Flow-Konsistenz: Mindestens 3 aufeinanderfolgende Messungen
+        if flow_detected:
+            self._flow_confirmation_counter += 1
+        else:
+            self._flow_confirmation_counter = 0
+
+        flow_confirmed = self._flow_confirmation_counter >= 3
+
+        if (flow_detected and flow_confirmed) or self._flow_active:
+            if not self._flow_active and flow_confirmed:
                 self._flow_active = True
-                _LOGGER.debug("Flow gestartet (dT/dt=%.5f K/min)", dt_baseline_corrected)
-            
+                _LOGGER.info("Flow gestartet (dT/dt=%.5f K/min, Nacht=%s, Sleep=%s)",
+                            dt_baseline_corrected, self._night_mode_active, self._is_deep_sleep_mode())
+
             if not flow_detected and dt_baseline_corrected > threshold_exit:
                 self._flow_active = False
-                _LOGGER.debug("Flow beendet (dT/dt=%.5f K/min)", dt_baseline_corrected)
-            
-            if self._flow_active and self._should_accept_thermal_flow(dt_baseline_corrected):
+                self._flow_confirmation_counter = 0
+                _LOGGER.info("Flow beendet (dT/dt=%.5f K/min)", dt_baseline_corrected)
+
+            if self._flow_active and self._should_accept_thermal_flow(dt_baseline_corrected, dt_gradient):
                 if dt_baseline_corrected < -self.clip:
                     dt_clipped = -self.clip
                 else:
@@ -474,6 +508,8 @@ class WasserResiduumController:
                 dt_clipped = 0.0
         else:
             dt_clipped = 0.0
+            if flow_detected and not flow_confirmed:
+                _LOGGER.debug("Flow-Kandidat ignoriert (nicht konsistent, Zähler=%d)", self._flow_confirmation_counter)
         
         if dt_clipped < 0.0:
             self._last_flow_time = now_ts
@@ -490,10 +526,11 @@ class WasserResiduumController:
                 flow_l_min = MAX_FLOW
             
             self._last_flow = flow_l_min
-            
+
             _LOGGER.debug(
-                "Flow: %.3f L/min (K=%.2f @ %.1f°C, dT_corr=%.4f K/min, baseline=%.2f°C)",
-                flow_l_min, k_adaptive, filt_temp, dt_baseline_corrected, baseline
+                "Flow: %.3f L/min (K=%.2f @ %.1f°C, dT_corr=%.4f K/min, baseline=%.2f°C, d²T/dt²=%.6f, Nacht=%s)",
+                flow_l_min, k_adaptive, filt_temp, dt_baseline_corrected, baseline,
+                dt_gradient if dt_gradient else 0.0, self._night_mode_active
             )
             
             self._integrate(flow_l_min, dt_s)
@@ -506,16 +543,13 @@ class WasserResiduumController:
         self._notify_entities()
     
     def _notify_entities(self) -> None:
-        """Alle registrierten Entities über Zustandsänderungen informieren."""
-        # ctrl im hass.data aktuell halten (wichtig für async_setup_entry)
+        """Informiert alle Entities über Zustandsänderungen."""
         self.hass.data[DOMAIN][self.entry.entry_id][DATA_CTRL] = self
-
-        # Alle Listener (Sensoren/Numbers/Buttons) updaten
         for cb in self.__dict__.get("_entity_listeners", []):
             try:
                 cb()
             except Exception as e:
-                _LOGGER.exception("Fehler im Entity-Listener: %s", e)
+                _LOGGER.exception("Entity-Listener Fehler: %s", e)
     
     async def async_start(self):
         @callback

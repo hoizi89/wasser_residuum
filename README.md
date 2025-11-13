@@ -1,8 +1,8 @@
 # Wasser-Residuum (ΔT→L Kalman)
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
-[![GitHub Release](https://img.shields.io/github/release/yourusername/wasser_residuum.svg)](https://github.com/yourusername/wasser_residuum/releases)
-[![License](https://img.shields.io/github/license/yourusername/wasser_residuum.svg)](LICENSE)
+[![GitHub Release](https://img.shields.io/github/release/hoizi89/wasser_residuum.svg)](https://github.com/hoizi89/wasser_residuum/releases)
+[![License](https://img.shields.io/github/license/hoizi89/wasser_residuum.svg)](LICENSE)
 
 Misst den Wasserverbrauch **zwischen 10L-Zählerticks** (0-9.9999L) in Echtzeit durch Temperaturüberwachung.
 

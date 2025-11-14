@@ -165,7 +165,7 @@ class KWarmSensor(BaseEntity):
             unit="L/K",
             icon="mdi:thermometer-high",
             state_class=SensorStateClass.MEASUREMENT,
-            entity_category=EntityCategory.CONFIG,
+            entity_category=EntityCategory.DIAGNOSTIC,
         )
 
     @property
@@ -181,7 +181,7 @@ class KColdSensor(BaseEntity):
             unit="L/K",
             icon="mdi:thermometer-low",
             state_class=SensorStateClass.MEASUREMENT,
-            entity_category=EntityCategory.CONFIG,
+            entity_category=EntityCategory.DIAGNOSTIC,
         )
 
     @property
@@ -283,15 +283,15 @@ class DiagDtUsed(BaseEntity):
         night_mode = getattr(self.ctrl, "_night_mode_active", False)
         deep_sleep = self.ctrl.deep_sleep_active
         threshold = -0.006
-        if night_mode:
-            threshold *= 5.0
+        # Nur Deep-Sleep macht Schwellwert strenger (20%)
         if deep_sleep:
-            threshold *= 3.0
+            threshold *= 1.2
         return {
             "flow_active": getattr(self.ctrl, "_flow_active", False),
             "night_mode": night_mode,
             "deep_sleep": deep_sleep,
             "current_threshold": round(threshold, 4),
+            "detection": "Gradient-based (d²T/dt²) + Baseline",
         }
 
 
@@ -408,7 +408,7 @@ class RssiSensor(BaseEntity):
 # --- VERBESSERT v0.3.0: Nacht-Abkühlungs-Schutz -------------------------------
 
 class DiagNightMode(BaseEntity):
-    """Zeigt an ob Nacht-Modus aktiv ist (strengere Schwellwerte)."""
+    """Zeigt an ob Nacht-Modus aktiv ist (nur Diagnostik, kein Einfluss mehr auf Erkennung)."""
     def __init__(self, ctrl, name: str):
         super().__init__(
             ctrl, name, "Night Mode",
@@ -435,7 +435,8 @@ class DiagNightMode(BaseEntity):
         return {
             "current_hour": now.hour,
             "night_hours": "22:00-06:00",
-            "threshold_multiplier": "5x" if getattr(self.ctrl, '_night_mode_active', False) else "1x",
+            "threshold_multiplier": "1x (nur Diagnostik, kein Einfluss auf Erkennung)",
+            "detection_method": "Gradient-basiert (d²T/dt²)",
         }
 
 
@@ -472,5 +473,6 @@ class DiagDeepSleep(BaseEntity):
         return {
             "idle_hours": round(idle_hours, 1),
             "threshold_hours": 2.0,
-            "threshold_multiplier": "3x" if self.ctrl.deep_sleep_active else "1x",
+            "threshold_multiplier": "1.2x (minimal strenger)" if self.ctrl.deep_sleep_active else "1x",
+            "note": "Haupterkennung über Gradient (d²T/dt²)",
         }

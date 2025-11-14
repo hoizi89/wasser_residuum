@@ -179,19 +179,13 @@ class WasserResiduumController:
             else:
                 base_threshold = -0.20
 
-        # Nacht-Modus: 3x strengerer Schwellwert
-        if self._is_night_time():
-            base_threshold *= 3.0
-            _LOGGER.debug("Nacht-Modus: Schwellwert %.4f", base_threshold)
-
-        # Deep-Sleep: weitere 2x Verschärfung
+        # Deep-Sleep: minimal strengerer Schwellwert (nur 20% bei >2h Inaktivität)
         if self._is_deep_sleep_mode():
-            base_threshold *= 2.0
-            _LOGGER.debug("Deep-Sleep: Schwellwert %.4f", base_threshold)
+            base_threshold *= 1.2
 
-        # Gradient-Check: Stetige Änderungen nachts ablehnen
-        if dt_gradient is not None and abs(dt_gradient) < 0.005 and self._is_night_time():
-            _LOGGER.debug("Stetige Änderung nachts: d²T/dt²=%.6f → abgelehnt", dt_gradient)
+        # Gradient-Check: Stetige Änderungen IMMER ablehnen (Umgebungsabkühlung)
+        # Wenn d²T/dt² sehr klein ist, ist die Änderung zu konstant → Umgebung, keine Zapfung
+        if dt_gradient is not None and abs(dt_gradient) < 0.003:
             return False
 
         return dt_baseline_corrected < base_threshold
@@ -210,8 +204,6 @@ class WasserResiduumController:
             self.clip = clip
         if max_res_l is not None:
             self.max_res_l = max_res_l
-        _LOGGER.info("Options: k_warm=%.2f, k_cold=%.2f, t_warm=%.1f°C, t_cold=%.1f°C",
-                     self.k_warm, self.k_cold, self.t_warm, self.t_cold)
     
     async def _persist_options(self, new_opts: dict):
         """Optionen im ConfigEntry speichern."""
@@ -224,12 +216,10 @@ class WasserResiduumController:
     async def async_set_k_warm(self, new_k: float):
         self.k_warm = new_k
         await self._persist_options({CONF_K_WARM: new_k})
-        _LOGGER.info("K-Warm geändert → %.2f", new_k)
-    
+
     async def async_set_k_cold(self, new_k: float):
         self.k_cold = new_k
         await self._persist_options({CONF_K_COLD: new_k})
-        _LOGGER.info("K-Cold geändert → %.2f", new_k)
     
     @property
     def residuum_l(self) -> float:
@@ -283,16 +273,11 @@ class WasserResiduumController:
 
         # Volume darf nicht negativ sein
         if self._volume_l < 0:
-            _LOGGER.debug("Volume negativ, reset auf 0")
             self._volume_l = 0.0
 
         # Volume darf nicht mehr als max_res_l über Offset liegen (10L Obergrenze)
         max_volume_allowed = self._offset_l + self.max_res_l
         if self._volume_l > max_volume_allowed:
-            _LOGGER.debug(
-                "Volume %.2f L > max %.2f L, cappe auf max (Offset %.2f L + max_res %.1f L)",
-                self._volume_l, max_volume_allowed, self._offset_l, self.max_res_l
-            )
             self._volume_l = max_volume_allowed
     
     def _convert_total_to_l(self, val: float) -> float:
@@ -324,19 +309,11 @@ class WasserResiduumController:
             if getattr(self, "_restored_volume", False):
                 self._last_hydrus_total = now_total_l  # nur Referenz setzen
                 self._guard_offset()
-                _LOGGER.info(
-                    "Init: verwende restauriertes Volume %.1f L (Hydrus=%.1f L)",
-                    self._volume_l, now_total_l
-                )
             else:
                 rounded_volume = (now_total_l // 10) * 10
                 self._volume_l = rounded_volume
                 self._offset_l = rounded_volume
                 self._guard_offset()
-                _LOGGER.info(
-                    "Late Init: Hydrus %.1f L → Volume %.1f L",
-                    now_total_l, self._volume_l
-                )
 
         
         # 10L-Tick Erkennung mit Auto-Kalibrierung
@@ -381,14 +358,6 @@ class WasserResiduumController:
                             self.hass.async_create_task(
                                 self._persist_options({CONF_K_COLD: self.k_cold})
                             )
-                    else:
-                        _LOGGER.info(
-                            "Auto-Kalibrierung übersprungen: thermal_measured=%.2f L "
-                            "(zu weit weg vom 10L-Tick)", thermal_measured
-                        )
-
-                _LOGGER.info("Hydrus 10L-Tick: +%.1f L, Thermal %.3f L → Reset",
-                            delta_l, thermal_measured)
 
                 # Reset Residuum und Tracking
                 self._offset_l = self._volume_l
@@ -424,7 +393,6 @@ class WasserResiduumController:
             self._kalman = SimpleKalman(init_temp=raw_temp)
             self._last_ts = now_ts
             self._last_temp_relative = 0.0
-            _LOGGER.info("Kalman init bei %.2f °C", raw_temp)
             self._notify_entities()
             return
         
@@ -468,26 +436,18 @@ class WasserResiduumController:
             mad = statistics.median([abs(x - median_dt) for x in self._dt_history]) or 0.0001
             z_score = (dt_baseline_corrected - median_dt) / (1.4826 * mad)
             if abs(z_score) > 6.0:
-                _LOGGER.debug(
-                    "dT/dt-Ausreißer verworfen: %.4f K/min (median=%.4f, MAD=%.4f, z=%.2f)",
-                    dt_baseline_corrected, median_dt, mad, z_score
-                )
                 return
         
-        # Adaptive Schwellwerte basierend auf Tageszeit und Sleep-Mode
+        # Adaptive Schwellwerte - hauptsächlich Gradient-basiert (d²T/dt²)
         threshold_enter = -0.006
         threshold_exit = -0.002
 
-        # Nacht-Modus: 5x strengerer Schwellwert
-        if self._is_night_time():
-            threshold_enter *= 5.0
-            self._night_mode_active = True
-        else:
-            self._night_mode_active = False
+        # Nacht-Modus: nur für Diagnostik, keine Änderung der Schwellwerte mehr
+        self._night_mode_active = self._is_night_time()
 
-        # Deep-Sleep: weitere 3x Verschärfung
+        # Deep-Sleep: minimal strengerer Schwellwert (nur 20% strenger bei >2h Inaktivität)
         if self._is_deep_sleep_mode():
-            threshold_enter *= 3.0
+            threshold_enter *= 1.2
 
         flow_detected = dt_baseline_corrected < threshold_enter
 
@@ -502,13 +462,12 @@ class WasserResiduumController:
         if (flow_detected and flow_confirmed) or self._flow_active:
             if not self._flow_active and flow_confirmed:
                 self._flow_active = True
-                _LOGGER.info("Flow gestartet (dT/dt=%.5f K/min, Nacht=%s, Sleep=%s)",
-                            dt_baseline_corrected, self._night_mode_active, self._is_deep_sleep_mode())
+                _LOGGER.info("Flow gestartet")
 
             if not flow_detected and dt_baseline_corrected > threshold_exit:
                 self._flow_active = False
                 self._flow_confirmation_counter = 0
-                _LOGGER.info("Flow beendet (dT/dt=%.5f K/min)", dt_baseline_corrected)
+                _LOGGER.info("Flow beendet")
 
             if self._flow_active and self._should_accept_thermal_flow(dt_baseline_corrected, dt_gradient):
                 if dt_baseline_corrected < -self.clip:
@@ -519,8 +478,6 @@ class WasserResiduumController:
                 dt_clipped = 0.0
         else:
             dt_clipped = 0.0
-            if flow_detected and not flow_confirmed:
-                _LOGGER.debug("Flow-Kandidat ignoriert (nicht konsistent, Zähler=%d)", self._flow_confirmation_counter)
         
         if dt_clipped < 0.0:
             self._last_flow_time = now_ts
@@ -535,15 +492,8 @@ class WasserResiduumController:
                 _LOGGER.warning("Flow %.1f L/min > Maximum, cappe auf %.1f", 
                                flow_l_min, MAX_FLOW)
                 flow_l_min = MAX_FLOW
-            
-            self._last_flow = flow_l_min
 
-            _LOGGER.debug(
-                "Flow: %.3f L/min (K=%.2f @ %.1f°C, dT_corr=%.4f K/min, baseline=%.2f°C, d²T/dt²=%.6f, Nacht=%s)",
-                flow_l_min, k_adaptive, filt_temp, dt_baseline_corrected, baseline,
-                dt_gradient if dt_gradient else 0.0, self._night_mode_active
-            )
-            
+            self._last_flow = flow_l_min
             self._integrate(flow_l_min, dt_s)
         else:
             self._last_flow = 0.0
@@ -573,9 +523,7 @@ class WasserResiduumController:
         
         self._remove_temp_listener = self.hass.bus.async_listen(EVENT_STATE_CHANGED, temp_listener)
         self._remove_total_listener = self.hass.bus.async_listen(EVENT_STATE_CHANGED, total_listener)
-        
-        _LOGGER.info("WasserResiduumController gestartet für %s / %s", self.temp_entity, self.total_entity)
-    
+
     async def async_stop(self):
         if self._remove_temp_listener:
             self._remove_temp_listener()
@@ -583,7 +531,6 @@ class WasserResiduumController:
         if self._remove_total_listener:
             self._remove_total_listener()
             self._remove_total_listener = None
-        _LOGGER.info("WasserResiduumController gestoppt")
     
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):

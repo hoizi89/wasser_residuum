@@ -34,6 +34,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         DiagKActive(ctrl, name),  # NEU
         DiagNightMode(ctrl, name),  # VERBESSERT v0.3.0
         DiagDeepSleep(ctrl, name),  # VERBESSERT v0.3.0
+        DiagHydrusTotal(ctrl, name),  # NEU: Wasserzähler-Wert
     ]
 
     # Optional: LastSync und RSSI
@@ -476,3 +477,53 @@ class DiagDeepSleep(BaseEntity):
             "threshold_multiplier": "1.2x (minimal strenger)" if self.ctrl.deep_sleep_active else "1x",
             "note": "Haupterkennung über Gradient (d²T/dt²)",
         }
+
+
+class DiagHydrusTotal(BaseEntity):
+    """Aktueller Wert des Wasserzählers (Hydrus)."""
+    def __init__(self, ctrl, name: str):
+        super().__init__(
+            ctrl, name, "Hydrus Total",
+            unit="L",
+            icon="mdi:counter",
+            state_class=SensorStateClass.TOTAL_INCREASING,
+            device_class=SensorDeviceClass.WATER,
+            entity_category=EntityCategory.DIAGNOSTIC,
+        )
+
+    @property
+    def native_value(self) -> float | None:
+        val = getattr(self.ctrl, '_last_hydrus_total', None)
+        return None if val is None else round(val, 3)
+
+    @property
+    def extra_state_attributes(self):
+        import time
+
+        # Zeit seit letztem 10L-Tick
+        last_tick_time = getattr(self.ctrl, '_last_hydrus_change_time', None)
+        if last_tick_time:
+            time_since_tick_min = (time.time() - last_tick_time) / 60.0
+        else:
+            time_since_tick_min = None
+
+        # Differenz zwischen thermischem Volume und Hydrus
+        volume = getattr(self.ctrl, '_volume_l', 0.0)
+        hydrus = getattr(self.ctrl, '_last_hydrus_total', None)
+        if hydrus is not None:
+            delta_to_hydrus = volume - hydrus
+        else:
+            delta_to_hydrus = None
+
+        attrs = {
+            "thermal_volume_l": round(volume, 3),
+            "residuum_l": round(self.ctrl.residuum_l, 3),
+        }
+
+        if delta_to_hydrus is not None:
+            attrs["delta_thermal_vs_hydrus"] = round(delta_to_hydrus, 3)
+
+        if time_since_tick_min is not None:
+            attrs["minutes_since_last_tick"] = round(time_since_tick_min, 1)
+
+        return attrs

@@ -263,7 +263,14 @@ class WasserResiduumController:
     def deep_sleep_active(self) -> bool:
         """Gibt zurück ob Deep-Sleep-Modus aktiv ist."""
         return self._is_deep_sleep_mode()
-    
+
+    def reset_residuum(self) -> None:
+        """Manueller Reset: Setzt Offset auf aktuelles Volume."""
+        self._offset_l = self._volume_l
+        self._volume_uncertainty = 0.0
+        _LOGGER.info("Residuum manuell zurückgesetzt: Offset = %.3f L", self._offset_l)
+        self._notify_entities()
+
     def _integrate(self, flow_l_min: float, dt_s: float):
         if dt_s <= 0:
             return
@@ -275,21 +282,23 @@ class WasserResiduumController:
         if self._volume_l < 0:
             self._volume_l = 0.0
 
-        # Volume darf nicht mehr als max_res_l über Offset liegen (10L Obergrenze)
-        max_volume_allowed = self._offset_l + self.max_res_l
-        if self._volume_l > max_volume_allowed:
-            self._volume_l = max_volume_allowed
+        # Volume darf nicht mehr als max_res_l über Hydrus-Total liegen (10L Obergrenze)
+        # Der Wasserzähler ist der harte Kontrolleur, nicht der Offset!
+        if self._last_hydrus_total is not None:
+            max_volume_allowed = self._last_hydrus_total + self.max_res_l
+            if self._volume_l > max_volume_allowed:
+                self._volume_l = max_volume_allowed
     
     def _convert_total_to_l(self, val: float) -> float:
         return _m3_to_l(val) if self.total_unit == "m3" else float(val)
     
     def _guard_offset(self):
-        """Offset darf höchstens 10 L über aktuellem Hydrus-Total liegen."""
+        """Offset darf NIEMALS über Hydrus-Total liegen (Wasserzähler ist Master)."""
         if self._last_hydrus_total is None:
             return
-        max_offset = self._last_hydrus_total + 10.0
-        if self._offset_l > max_offset:
-            self._offset_l = max_offset
+        # Offset muss immer <= Hydrus-Total sein
+        if self._offset_l > self._last_hydrus_total:
+            self._offset_l = self._last_hydrus_total
     
     @callback
     def _on_total_entity_changed(self, event: Event) -> None:
@@ -360,7 +369,9 @@ class WasserResiduumController:
                             )
 
                 # Reset Residuum und Tracking
-                self._offset_l = self._volume_l
+                # WICHTIG: Offset = Hydrus-Total (nicht Volume!), damit keine Drift entsteht
+                self._offset_l = now_total_l
+                self._volume_l = now_total_l  # Volume auch auf Hydrus setzen für sauberen Reset
                 self._volume_uncertainty = 0.0
                 self._last_hydrus_change_time = time.time()
                 self._temp_history_since_tick = []

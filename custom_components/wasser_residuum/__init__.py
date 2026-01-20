@@ -114,6 +114,11 @@ class WasserResiduumController:
         self._flow_confirmation_counter = 0
         self._night_mode_active = False
 
+        # Varianz-basierte Erkennung für Kalt-Wetter
+        self._temp_variance_history = deque(maxlen=30)  # 30 Sekunden Fenster
+        self._baseline_variance = 0.001  # Wird automatisch gelernt
+        self._variance_flow_detected = False
+
         self._remove_temp_listener = None
         self._remove_total_listener = None
     
@@ -183,6 +188,42 @@ class WasserResiduumController:
         threshold = THRESH_COLD + ratio * (THRESH_WARM - THRESH_COLD)
 
         return threshold
+
+    def _check_variance_flow(self) -> bool:
+        """
+        Varianz-basierte Flow-Erkennung für kaltes Wetter.
+
+        Prinzip: Wasserfluss verursacht mehr Temperatur-"Rauschen" im Signal,
+        auch wenn die mittlere Temperatur sich kaum ändert.
+
+        Bei kaltem Rohr ist die Varianz der einzige zuverlässige Indikator!
+        """
+        if len(self._temp_variance_history) < 10:
+            return False
+
+        # Aktuelle Varianz berechnen
+        temps = list(self._temp_variance_history)
+        current_variance = np.var(temps)
+
+        # Baseline-Varianz aktualisieren (nur wenn kein Flow aktiv)
+        if not self._flow_active and not self._variance_flow_detected:
+            # Langsam lernen: 1% Gewicht für neue Werte
+            self._baseline_variance = (
+                0.99 * self._baseline_variance + 0.01 * current_variance
+            )
+            # Minimum Baseline um Division durch 0 zu vermeiden
+            self._baseline_variance = max(0.0001, self._baseline_variance)
+
+        # Varianz-Ratio: Wie viel höher ist aktuelle Varianz vs. Baseline?
+        variance_ratio = current_variance / self._baseline_variance
+
+        # Bei kaltem Rohr (<10°C): Niedrigerer Schwellwert für Varianz-Detection
+        if self._last_temp is not None and self._last_temp < 10.0:
+            # Bei Kälte reicht 2x Baseline-Varianz
+            return variance_ratio > 2.0
+        else:
+            # Bei Wärme brauchen wir 4x Baseline (weniger Falsch-Positive)
+            return variance_ratio > 4.0
 
     def _calculate_baseline(self) -> float:
         """Gleitende Baseline über 12h. Nachts 1. Perzentil, tags 2. Perzentil."""
@@ -294,6 +335,20 @@ class WasserResiduumController:
     def deep_sleep_active(self) -> bool:
         """Gibt zurück ob Deep-Sleep-Modus aktiv ist."""
         return self._is_deep_sleep_mode()
+
+    @property
+    def variance_flow_detected(self) -> bool:
+        """Gibt zurück ob Varianz-basierte Flow-Erkennung aktiv ist."""
+        return self._variance_flow_detected
+
+    @property
+    def current_variance_ratio(self) -> float:
+        """Aktuelles Verhältnis Varianz / Baseline-Varianz."""
+        if len(self._temp_variance_history) < 10 or self._baseline_variance < 0.0001:
+            return 0.0
+        temps = list(self._temp_variance_history)
+        current_variance = np.var(temps)
+        return current_variance / self._baseline_variance
 
     def reset_residuum(self) -> None:
         """Manueller Reset: Setzt Offset auf aktuelles Volume."""
@@ -450,6 +505,10 @@ class WasserResiduumController:
         self._temp_history_6h.append(filt_temp)
         self._temp_history_since_tick.append(filt_temp)
 
+        # Varianz-basierte Erkennung (besonders wichtig bei kaltem Wetter)
+        self._temp_variance_history.append(raw_temp)
+        self._variance_flow_detected = self._check_variance_flow()
+
         # Baseline-Korrektur
         baseline = self._calculate_baseline()
         temp_relative = filt_temp - baseline
@@ -494,7 +553,17 @@ class WasserResiduumController:
             threshold_enter *= 1.2
             threshold_exit *= 1.2
 
-        flow_detected = dt_baseline_corrected < threshold_enter
+        # Gradient-basierte Erkennung
+        gradient_flow_detected = dt_baseline_corrected < threshold_enter
+
+        # Kombinierte Erkennung: Gradient ODER Varianz (bei Kälte)
+        # Bei kaltem Rohr (<10°C) ist Varianz oft der bessere Indikator
+        if filt_temp < 10.0:
+            # Kalt: Gradient ODER Varianz reicht aus
+            flow_detected = gradient_flow_detected or self._variance_flow_detected
+        else:
+            # Warm: Nur Gradient (Varianz zu unzuverlässig bei großen Temperaturänderungen)
+            flow_detected = gradient_flow_detected
 
         # Flow-Konsistenz: Mindestens 3 aufeinanderfolgende Messungen
         if flow_detected:

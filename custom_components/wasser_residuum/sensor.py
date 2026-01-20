@@ -35,6 +35,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         DiagNightMode(ctrl, name),  # VERBESSERT v0.3.0
         DiagDeepSleep(ctrl, name),  # VERBESSERT v0.3.0
         DiagHydrusTotal(ctrl, name),  # NEU: Wasserzähler-Wert
+        DiagVariance(ctrl, name),  # NEU v0.6.0: Varianz-basierte Erkennung
     ]
 
     # Optional: LastSync und RSSI
@@ -536,3 +537,48 @@ class DiagHydrusTotal(BaseEntity):
             attrs["minutes_since_last_tick"] = round(time_since_tick_min, 1)
 
         return attrs
+
+
+class DiagVariance(BaseEntity):
+    """Varianz-basierte Flow-Erkennung für kaltes Wetter."""
+    def __init__(self, ctrl, name: str):
+        super().__init__(
+            ctrl, name, "Variance Detection",
+            icon="mdi:chart-bell-curve",
+            entity_category=EntityCategory.DIAGNOSTIC,
+        )
+
+    @property
+    def native_value(self) -> str:
+        """Gibt 'Active' oder 'Inactive' zurück."""
+        is_active = getattr(self.ctrl, 'variance_flow_detected', False)
+        return "Active" if is_active else "Inactive"
+
+    @property
+    def icon(self) -> str:
+        """Dynamisches Icon basierend auf Status."""
+        is_active = getattr(self.ctrl, 'variance_flow_detected', False)
+        return "mdi:chart-bell-curve-cumulative" if is_active else "mdi:chart-bell-curve"
+
+    @property
+    def extra_state_attributes(self):
+        variance_ratio = getattr(self.ctrl, 'current_variance_ratio', 0.0)
+        baseline_variance = getattr(self.ctrl, '_baseline_variance', 0.001)
+        pipe_temp = getattr(self.ctrl, '_last_temp', None)
+
+        # Schwellwert abhängig von Temperatur
+        if pipe_temp is not None and pipe_temp < 10.0:
+            threshold = 2.0
+            mode = "Kalt-Modus (sensitiv)"
+        else:
+            threshold = 4.0
+            mode = "Warm-Modus (normal)"
+
+        return {
+            "variance_ratio": round(variance_ratio, 2),
+            "threshold": threshold,
+            "baseline_variance": round(baseline_variance, 6),
+            "pipe_temp": round(pipe_temp, 1) if pipe_temp else None,
+            "mode": mode,
+            "description": "Erkennt Flow durch erhöhtes Temperatur-Rauschen (bei Kälte besonders wichtig)",
+        }

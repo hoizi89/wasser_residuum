@@ -153,6 +153,37 @@ class WasserResiduumController:
         idle_hours = (time.time() - self._last_flow_time) / 3600.0
         return idle_hours > 2.0
 
+    def _get_dynamic_threshold(self, current_temp: float) -> float:
+        """
+        Dynamischer Erkennungs-Schwellwert basierend auf Rohrtemperatur.
+
+        Problem: Bei kaltem Rohr (<10°C) ist einkommendes Wasser ähnlich kalt,
+        daher ist der Temperaturabfall beim Zapfen minimal.
+
+        Lösung: Sensiblerer Schwellwert bei kalten Temperaturen.
+
+        Temperatur → Schwellwert:
+        - >= 20°C (warm): -0.008 K/min (normaler Schwellwert)
+        - <= 8°C (kalt):  -0.002 K/min (sehr sensitiv)
+        - Dazwischen: lineare Interpolation
+        """
+        TEMP_WARM = 20.0  # Ab hier normaler Schwellwert
+        TEMP_COLD = 8.0   # Ab hier maximale Sensitivität
+        THRESH_WARM = -0.008  # Normaler Schwellwert bei warmem Rohr
+        THRESH_COLD = -0.002  # Sensitiver Schwellwert bei kaltem Rohr
+
+        if current_temp >= TEMP_WARM:
+            return THRESH_WARM
+        if current_temp <= TEMP_COLD:
+            return THRESH_COLD
+
+        # Lineare Interpolation
+        temp_range = TEMP_WARM - TEMP_COLD
+        ratio = (current_temp - TEMP_COLD) / temp_range
+        threshold = THRESH_COLD + ratio * (THRESH_WARM - THRESH_COLD)
+
+        return threshold
+
     def _calculate_baseline(self) -> float:
         """Gleitende Baseline über 12h. Nachts 1. Perzentil, tags 2. Perzentil."""
         if len(self._temp_history_6h) < 60:
@@ -449,16 +480,19 @@ class WasserResiduumController:
             if abs(z_score) > 6.0:
                 return
         
-        # Adaptive Schwellwerte - hauptsächlich Gradient-basiert (d²T/dt²)
-        threshold_enter = -0.006
-        threshold_exit = -0.002
+        # Adaptive Schwellwerte - temperaturabhängig für bessere Kalt-Erkennung
+        # Bei kaltem Rohr (<10°C) ist der Temperaturabfall beim Zapfen minimal
+        # → sensiblerer Schwellwert nötig
+        threshold_enter = self._get_dynamic_threshold(filt_temp)
+        threshold_exit = threshold_enter * 0.33  # Exit bei 1/3 des Enter-Schwellwerts
 
-        # Nacht-Modus: nur für Diagnostik, keine Änderung der Schwellwerte mehr
+        # Nacht-Modus: nur für Diagnostik
         self._night_mode_active = self._is_night_time()
 
         # Deep-Sleep: minimal strengerer Schwellwert (nur 20% strenger bei >2h Inaktivität)
         if self._is_deep_sleep_mode():
             threshold_enter *= 1.2
+            threshold_exit *= 1.2
 
         flow_detected = dt_baseline_corrected < threshold_enter
 

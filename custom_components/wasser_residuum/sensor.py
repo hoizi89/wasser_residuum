@@ -283,16 +283,25 @@ class DiagDtUsed(BaseEntity):
     def extra_state_attributes(self):
         night_mode = getattr(self.ctrl, "_night_mode_active", False)
         deep_sleep = self.ctrl.deep_sleep_active
-        threshold = -0.006
-        # Nur Deep-Sleep macht Schwellwert strenger (20%)
+
+        # Dynamischen Schwellwert aus Controller holen
+        if hasattr(self.ctrl, '_kalman') and self.ctrl._kalman is not None:
+            filt_temp, _ = self.ctrl._kalman.get_state()
+            threshold = self.ctrl._get_dynamic_threshold(filt_temp)
+        else:
+            threshold = -0.006  # Fallback
+
+        # Deep-Sleep macht Schwellwert strenger (20%)
         if deep_sleep:
             threshold *= 1.2
+
         return {
             "flow_active": getattr(self.ctrl, "_flow_active", False),
             "night_mode": night_mode,
             "deep_sleep": deep_sleep,
             "current_threshold": round(threshold, 4),
-            "detection": "Gradient-based (d²T/dt²) + Baseline",
+            "pipe_temp": round(filt_temp, 1) if hasattr(self.ctrl, '_kalman') and self.ctrl._kalman else None,
+            "detection": "Temperaturabhängiger Schwellwert (kalt=sensitiv, warm=normal)",
         }
 
 

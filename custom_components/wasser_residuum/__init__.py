@@ -556,11 +556,26 @@ class WasserResiduumController:
         # Gradient-basierte Erkennung
         gradient_flow_detected = dt_baseline_corrected < threshold_enter
 
-        # Kombinierte Erkennung: Gradient ODER Varianz (bei Kälte)
-        # Bei kaltem Rohr (<10°C) ist Varianz oft der bessere Indikator
+        # Schutz gegen langsames Abkühlen (Nacht/Tag):
+        # Bei kaltem Rohr und sensiblem Schwellwert MUSS Varianz erhöht sein
+        # Sonst: Langsame, stetige Änderung = Umgebungstemperatur, nicht Zapfung
         if filt_temp < 10.0:
-            # Kalt: Gradient ODER Varianz reicht aus
-            flow_detected = gradient_flow_detected or self._variance_flow_detected
+            # Kalt-Modus: Gradient allein reicht NICHT
+            # Gradient muss DEUTLICH unter Schwellwert sein (-3x) ODER Varianz muss erhöht sein
+            strong_gradient = dt_baseline_corrected < (threshold_enter * 3.0)  # z.B. < -0.006
+
+            if strong_gradient:
+                # Starker Gradient: Fast sicher Zapfung
+                flow_detected = True
+            elif gradient_flow_detected and self._variance_flow_detected:
+                # Schwacher Gradient + erhöhte Varianz: Wahrscheinlich Zapfung
+                flow_detected = True
+            elif self._variance_flow_detected and dt_baseline_corrected < 0:
+                # Nur Varianz erhöht + negative Temperaturänderung: Möglich
+                flow_detected = True
+            else:
+                # Nur schwacher Gradient ohne Varianz-Bestätigung: Wahrscheinlich Abkühlung
+                flow_detected = False
         else:
             # Warm: Nur Gradient (Varianz zu unzuverlässig bei großen Temperaturänderungen)
             flow_detected = gradient_flow_detected

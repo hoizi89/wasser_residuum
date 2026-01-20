@@ -118,6 +118,7 @@ class WasserResiduumController:
         self._temp_variance_history = deque(maxlen=30)  # 30 Sekunden Fenster
         self._baseline_variance = 0.001  # Wird automatisch gelernt
         self._variance_flow_detected = False
+        self._last_positive_flow = 3.0  # Letzter bekannter Flow für Plateau-Modus
 
         self._remove_temp_listener = None
         self._remove_total_listener = None
@@ -593,10 +594,17 @@ class WasserResiduumController:
                 self._flow_active = True
                 _LOGGER.info("Flow gestartet")
 
-            if not flow_detected and dt_baseline_corrected > threshold_exit:
+            # Flow beenden NUR wenn:
+            # 1. Kein Flow mehr erkannt UND
+            # 2. Temperatur steigt aktiv (Rohr erwärmt sich) UND
+            # 3. Varianz ist NICHT erhöht (sonst läuft noch Wasser!)
+            temp_rising = dt_baseline_corrected > 0.001  # Aktiv erwärmend
+            variance_low = not self._variance_flow_detected
+
+            if not flow_detected and temp_rising and variance_low:
                 self._flow_active = False
                 self._flow_confirmation_counter = 0
-                _LOGGER.info("Flow beendet")
+                _LOGGER.info("Flow beendet (Temp steigt, Varianz niedrig)")
 
             if self._flow_active and self._should_accept_thermal_flow(dt_baseline_corrected, dt_gradient):
                 if dt_baseline_corrected < -self.clip:
@@ -607,26 +615,41 @@ class WasserResiduumController:
                 dt_clipped = 0.0
         else:
             dt_clipped = 0.0
-        
+
+        # Berechne Flow-Rate
+        k_adaptive = self._get_interpolated_k(filt_temp)
+        self._last_k_used = k_adaptive
+
         if dt_clipped < 0.0:
+            # Normale Berechnung: Gradient → Flow
             self._last_flow_time = now_ts
-            
-            k_adaptive = self._get_interpolated_k(filt_temp)
-            self._last_k_used = k_adaptive
-            
             flow_l_min = k_adaptive * (-dt_clipped)
-            
+
+        elif self._flow_active and self._variance_flow_detected:
+            # WICHTIG: Temperatur stabil aber Varianz hoch → Wasser läuft noch!
+            # Schätze Flow basierend auf letztem bekannten Wert oder Minimum
+            self._last_flow_time = now_ts
+            # Verwende letzten Flow oder konservativen Schätzwert (3 L/min)
+            last_known_flow = getattr(self, '_last_positive_flow', 3.0)
+            flow_l_min = max(2.0, last_known_flow * 0.8)  # 80% vom letzten, min 2 L/min
+            _LOGGER.debug("Plateau-Modus: Varianz hoch, schätze %.1f L/min", flow_l_min)
+
+        else:
+            flow_l_min = 0.0
+
+        # Flow-Rate begrenzen und speichern
+        if flow_l_min > 0.0:
             MAX_FLOW = 25.0
             if flow_l_min > MAX_FLOW:
-                _LOGGER.warning("Flow %.1f L/min > Maximum, cappe auf %.1f", 
+                _LOGGER.warning("Flow %.1f L/min > Maximum, cappe auf %.1f",
                                flow_l_min, MAX_FLOW)
                 flow_l_min = MAX_FLOW
 
             self._last_flow = flow_l_min
+            self._last_positive_flow = flow_l_min  # Merken für Plateau-Modus
             self._integrate(flow_l_min, dt_s)
         else:
             self._last_flow = 0.0
-            self._last_k_used = self._get_interpolated_k(filt_temp)
         
         self._last_temp_relative = temp_relative
         

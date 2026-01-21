@@ -53,7 +53,31 @@ class WasserResiduumOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input=None):
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            # Entity-Änderungen müssen in data gespeichert werden, nicht options
+            new_data = dict(self.config_entry.data)
+            new_options = {}
+
+            # Entities aus user_input in data verschieben
+            for key in [CONF_TEMP_ENTITY, CONF_TOTAL_ENTITY, CONF_TOTAL_UNIT]:
+                if key in user_input:
+                    new_data[key] = user_input[key]
+                    del user_input[key]
+
+            # Rest sind options
+            new_options = user_input
+
+            # Data aktualisieren (nur data, nicht options - das macht async_create_entry)
+            self.hass.config_entries.async_update_entry(
+                self.config_entry,
+                data=new_data,
+            )
+
+            return self.async_create_entry(title="", data=new_options)
+
+        # Aktuelle Werte aus data und options holen
+        current_temp_entity = self.config_entry.data.get(CONF_TEMP_ENTITY, "")
+        current_total_entity = self.config_entry.data.get(CONF_TOTAL_ENTITY, "")
+        current_total_unit = self.config_entry.data.get(CONF_TOTAL_UNIT, DEFAULT_TOTAL_UNIT)
 
         current_k_warm = self.config_entry.options.get(CONF_K_WARM, DEFAULT_K_WARM)
         current_k_cold = self.config_entry.options.get(CONF_K_COLD, DEFAULT_K_COLD)
@@ -65,6 +89,13 @@ class WasserResiduumOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
+                vol.Required(CONF_TEMP_ENTITY, default=current_temp_entity): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Required(CONF_TOTAL_ENTITY, default=current_total_entity): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Required(CONF_TOTAL_UNIT, default=current_total_unit): vol.In(["L", "m3"]),
                 vol.Optional(CONF_K_WARM, default=current_k_warm): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=RANGE_K["min"],

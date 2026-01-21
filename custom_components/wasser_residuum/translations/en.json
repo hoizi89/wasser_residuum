@@ -33,16 +33,22 @@
     "step": {
       "init": {
         "title": "Advanced Options",
-        "description": "K-factors are auto-calibrated and visible in 'sensor.wasser_residuum_k_active'.",
+        "description": "K-factors are auto-calibrated. You can also change the sensors here.",
         "data": {
+          "temp_entity": "Temperature Sensor",
+          "total_entity": "Water Meter",
+          "total_unit": "Water Meter Unit",
           "t_warm": "Temperature Warm (°C)",
           "t_cold": "Temperature Cold (°C)",
           "clip": "Gradient Limit (K/min)",
           "max_residuum_l": "Maximum Residuum (L)"
         },
         "data_description": {
-          "t_warm": "Temperature threshold for 'warm'. K-Warm is used at this temperature. K-Warm auto-learns!",
-          "t_cold": "Temperature threshold for 'cold'. K-Cold is used at this temperature. K-Cold auto-learns!",
+          "temp_entity": "Sensor that measures water temperature in the pipe",
+          "total_entity": "Smart meter water counter (counts in 10L steps)",
+          "total_unit": "Choose L if your meter counts in liters, m³ if in cubic meters",
+          "t_warm": "Temperature threshold for 'warm'. K-Warm is used at this temperature.",
+          "t_cold": "Temperature threshold for 'cold'. K-Cold is used at this temperature.",
           "clip": "Maximum temperature gradient to prevent overshooting.",
           "max_residuum_l": "Upper limit for residuum. Should stay at 10L."
         }

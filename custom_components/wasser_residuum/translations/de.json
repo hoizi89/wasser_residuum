@@ -33,16 +33,22 @@
     "step": {
       "init": {
         "title": "Erweiterte Optionen",
-        "description": "Die K-Faktoren werden automatisch kalibriert und sind in 'sensor.wasser_residuum_k_active' sichtbar.",
+        "description": "Die K-Faktoren werden automatisch kalibriert. Du kannst hier auch die Sensoren ändern.",
         "data": {
+          "temp_entity": "Temperatursensor",
+          "total_entity": "Wasserzähler",
+          "total_unit": "Einheit des Wasserzählers",
           "t_warm": "Temperatur Warm (°C)",
           "t_cold": "Temperatur Kalt (°C)",
           "clip": "Gradient-Limit (K/min)",
           "max_residuum_l": "Maximales Residuum (L)"
         },
         "data_description": {
-          "t_warm": "Temperatur-Schwelle für 'warm'. Bei dieser Temperatur wird K-Warm verwendet. K-Warm lernt automatisch!",
-          "t_cold": "Temperatur-Schwelle für 'kalt'. Bei dieser Temperatur wird K-Cold verwendet. K-Cold lernt automatisch!",
+          "temp_entity": "Sensor der die Wassertemperatur in der Leitung misst",
+          "total_entity": "Smart-Meter Wasserzähler (zählt in 10L-Schritten)",
+          "total_unit": "Wähle L wenn dein Zähler in Litern zählt, m³ wenn in Kubikmetern",
+          "t_warm": "Temperatur-Schwelle für 'warm'. Bei dieser Temperatur wird K-Warm verwendet.",
+          "t_cold": "Temperatur-Schwelle für 'kalt'. Bei dieser Temperatur wird K-Cold verwendet.",
           "clip": "Maximaler Temperaturgradient um Überschwingen zu verhindern.",
           "max_residuum_l": "Obergrenze für das Residuum. Sollte bei 10L bleiben."
         }

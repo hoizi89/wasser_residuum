@@ -463,8 +463,23 @@ class WasserResiduumController:
                 self._last_hydrus_change_time = time.time()
                 self._temp_history_since_tick = []
 
-            elif delta_l > 10.5:
-                _LOGGER.warning("Hydrus Sprung %.1f L, kein Auto-Reset", delta_l)
+            elif 10.5 < delta_l <= 100.0:
+                # Moderater Sprung (z.B. nach Offline-Zeit) → Sync zu Hydrus
+                _LOGGER.info(
+                    "Hydrus Sprung %.1f L erkannt (Offline?), synchronisiere Volume: %.1f → %.1f",
+                    delta_l, self._volume_l, now_total_l
+                )
+                self._offset_l = now_total_l
+                self._volume_l = now_total_l
+                self._volume_uncertainty = 0.0
+                self._temp_history_since_tick = []
+            elif delta_l > 100.0:
+                # Riesiger Sprung → wahrscheinlich Fehler/Zählerwechsel, NICHT auto-sync
+                _LOGGER.warning(
+                    "Hydrus Riesen-Sprung %.1f L! Kein Auto-Sync (evtl. Zählerwechsel?). "
+                    "Manuell Reset drücken wenn gewünscht.",
+                    delta_l
+                )
             elif delta_l < -0.1:
                 _LOGGER.warning("Hydrus Rückwärts: %.3f → %.3f", 
                                self._last_hydrus_total, now_total_l)

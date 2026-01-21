@@ -75,8 +75,8 @@ class WasserResiduumOptionsFlow(config_entries.OptionsFlow):
             return self.async_create_entry(title="", data=new_options)
 
         # Aktuelle Werte aus data und options holen
-        current_temp_entity = self.config_entry.data.get(CONF_TEMP_ENTITY, "")
-        current_total_entity = self.config_entry.data.get(CONF_TOTAL_ENTITY, "")
+        current_temp_entity = self.config_entry.data.get(CONF_TEMP_ENTITY)
+        current_total_entity = self.config_entry.data.get(CONF_TOTAL_ENTITY)
         current_total_unit = self.config_entry.data.get(CONF_TOTAL_UNIT, DEFAULT_TOTAL_UNIT)
 
         current_k_warm = self.config_entry.options.get(CONF_K_WARM, DEFAULT_K_WARM)
@@ -86,63 +86,82 @@ class WasserResiduumOptionsFlow(config_entries.OptionsFlow):
         current_clip = self.config_entry.options.get(CONF_CLIP, DEFAULT_CLIP)
         current_max = self.config_entry.options.get(CONF_MAX_RES_L, DEFAULT_MAX_RES_L)
 
+        # Schema dynamisch aufbauen - EntitySelector braucht gültige Defaults
+        schema_dict = {}
+
+        # Temp Entity - mit oder ohne Default je nachdem ob vorhanden
+        if current_temp_entity:
+            schema_dict[vol.Required(CONF_TEMP_ENTITY, default=current_temp_entity)] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            )
+        else:
+            schema_dict[vol.Required(CONF_TEMP_ENTITY)] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            )
+
+        # Total Entity - mit oder ohne Default je nachdem ob vorhanden
+        if current_total_entity:
+            schema_dict[vol.Required(CONF_TOTAL_ENTITY, default=current_total_entity)] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            )
+        else:
+            schema_dict[vol.Required(CONF_TOTAL_ENTITY)] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            )
+
+        schema_dict[vol.Required(CONF_TOTAL_UNIT, default=current_total_unit)] = vol.In(["L", "m3"])
+
+        # Restliche Options
+        schema_dict[vol.Optional(CONF_K_WARM, default=current_k_warm)] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=RANGE_K["min"],
+                max=RANGE_K["max"],
+                step=RANGE_K["step"],
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        )
+        schema_dict[vol.Optional(CONF_K_COLD, default=current_k_cold)] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=RANGE_K["min"],
+                max=RANGE_K["max"],
+                step=RANGE_K["step"],
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        )
+        schema_dict[vol.Required(CONF_T_WARM, default=current_t_warm)] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=RANGE_T["min"],
+                max=RANGE_T["max"],
+                step=RANGE_T["step"],
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        )
+        schema_dict[vol.Required(CONF_T_COLD, default=current_t_cold)] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=RANGE_T["min"],
+                max=RANGE_T["max"],
+                step=RANGE_T["step"],
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        )
+        schema_dict[vol.Optional(CONF_CLIP, default=current_clip)] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=RANGE_CLIP["min"],
+                max=RANGE_CLIP["max"],
+                step=RANGE_CLIP["step"],
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        )
+        schema_dict[vol.Required(CONF_MAX_RES_L, default=current_max)] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=RANGE_MAX_RES["min"],
+                max=RANGE_MAX_RES["max"],
+                step=RANGE_MAX_RES["step"],
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        )
+
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema({
-                vol.Required(CONF_TEMP_ENTITY, default=current_temp_entity): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
-                ),
-                vol.Required(CONF_TOTAL_ENTITY, default=current_total_entity): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
-                ),
-                vol.Required(CONF_TOTAL_UNIT, default=current_total_unit): vol.In(["L", "m3"]),
-                vol.Optional(CONF_K_WARM, default=current_k_warm): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=RANGE_K["min"],
-                        max=RANGE_K["max"],
-                        step=RANGE_K["step"],
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-                vol.Optional(CONF_K_COLD, default=current_k_cold): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=RANGE_K["min"],
-                        max=RANGE_K["max"],
-                        step=RANGE_K["step"],
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-                vol.Required(CONF_T_WARM, default=current_t_warm): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=RANGE_T["min"],
-                        max=RANGE_T["max"],
-                        step=RANGE_T["step"],
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-                vol.Required(CONF_T_COLD, default=current_t_cold): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=RANGE_T["min"],
-                        max=RANGE_T["max"],
-                        step=RANGE_T["step"],
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-                vol.Optional(CONF_CLIP, default=current_clip): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=RANGE_CLIP["min"],
-                        max=RANGE_CLIP["max"],
-                        step=RANGE_CLIP["step"],
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-                vol.Required(CONF_MAX_RES_L, default=current_max): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=RANGE_MAX_RES["min"],
-                        max=RANGE_MAX_RES["max"],
-                        step=RANGE_MAX_RES["step"],
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-            })
+            data_schema=vol.Schema(schema_dict)
         )

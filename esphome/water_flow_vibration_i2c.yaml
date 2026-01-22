@@ -1,12 +1,8 @@
-# ESPHome ADXL345 - Varianz-basierte Wassererkennung
-# Y-Achse zeigt besten Unterschied: AUS=0.041, EIN=0.052 (+26%)
-# Schwellwert: 0.048 m/s² (etwas hoeher gegen Fehlalarme)
+# ESPHome ADXL345 - Vibrations-Sensor fuer Wassererkennung
+# Sendet nur Y-Achsen Standardabweichung an Home Assistant
+# Flow-Berechnung + Kalibrierung erfolgt in der HA Integration "wasser_vibration"
 #
-# Flow-Kalibrierung (kalibriert: 1L in 12s bei Std 0.050):
-#   - Threshold 0.048: darunter = 0 L/min
-#   - Bei Std 0.050: ca. 5 L/min
-#   - Bei Std 0.055: ca. 17 L/min
-#   - Bei Std 0.060: ca. 30 L/min (Faktor 2500)
+# Messwerte: AUS ~0.041, EIN ~0.052 (+26%)
 esphome:
   name: wasser-vibration
   friendly_name: Wasser Vibration
@@ -129,52 +125,8 @@ sensor:
     update_interval: 500ms
     lambda: return id(std_y);
 
-  - platform: template
-    name: "Durchfluss"
-    id: durchfluss
-    unit_of_measurement: "L/min"
-    accuracy_decimals: 1
-    device_class: water
-    state_class: measurement
-    update_interval: 1s
-    lambda: |-
-      // Kalibriert: 1L in 12s bei Std 0.050 = 5 L/min
-      // Faktor = 5 / (0.050 - 0.048) = 2500
-      float std = id(std_y);
-      if (std < 0.048f) return 0.0f;
-      float flow = (std - 0.048f) * 2500.0f;
-      return fmin(flow, 30.0f);
-
-binary_sensor:
-  - platform: template
-    name: "Wasser Fliesst"
-    id: wasser_fliesst
-    device_class: running
-    lambda: return id(std_y) > 0.048f;
-    filters:
-      - delayed_on: 2s
-      - delayed_off: 5s
-
-text_sensor:
-  - platform: template
-    name: "Status"
-    update_interval: 1s
-    lambda: |-
-      float std = id(std_y);
-      char buf[64];
-      // Kalibriert mit Faktor 2500 (1L/12s bei 0.050)
-      if (std < 0.048f) {
-        snprintf(buf, sizeof(buf), "Kein Wasser (%.4f)", std);
-      } else if (std < 0.050f) {
-        snprintf(buf, sizeof(buf), "Schwach <5L/min (%.4f)", std);
-      } else if (std < 0.054f) {
-        snprintf(buf, sizeof(buf), "Mittel 5-15L/min (%.4f)", std);
-      } else if (std < 0.060f) {
-        snprintf(buf, sizeof(buf), "Stark 15-30L/min (%.4f)", std);
-      } else {
-        snprintf(buf, sizeof(buf), "Sehr stark 30+L/min (%.4f)", std);
-      }
-      return {buf};
+# Flow-Berechnung erfolgt in Home Assistant Integration "wasser_vibration"
+# Dort konfigurierbar: Schwellwerte, Flow-Max, etc.
 
 button:
   - platform: template

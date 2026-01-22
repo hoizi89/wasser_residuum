@@ -128,19 +128,15 @@ sensor:
 # Flow-Berechnung erfolgt in Home Assistant Integration "wasser_vibration"
 # Dort konfigurierbar: Schwellwerte, Flow-Max, etc.
 
-text_sensor:
+binary_sensor:
   - platform: template
-    name: "Status"
-    update_interval: 1s
-    lambda: |-
-      float std = id(std_y);
-      char buf[32];
-      if (std < 0.048f) {
-        snprintf(buf, sizeof(buf), "Kein Wasser (%.4f)", std);
-      } else {
-        snprintf(buf, sizeof(buf), "Wasser (%.4f)", std);
-      }
-      return {buf};
+    name: "Wasser Fliesst"
+    id: wasser_fliesst
+    device_class: running
+    lambda: return id(std_y) > 0.048f;
+    filters:
+      - delayed_on: 2s
+      - delayed_off: 5s
 
 button:
   - platform: template

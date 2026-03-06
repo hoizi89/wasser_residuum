@@ -1,10 +1,10 @@
 # Wasser-Residuum
 
-Estimates water consumption **between 10L meter ticks** (0-9.999 L) in real time using pipe temperature monitoring and Kalman filtering.
+Estimates water consumption **between 10L meter ticks** (0-9.999 L) in real time using temperature data from a wMBus water meter (e.g., Diehl Hydrus) and Kalman filtering.
 
 ## How It Works
 
-Water flow causes a temperature drop in the pipe. A Kalman filter extracts the temperature gradient, which is converted to flow rate using auto-calibrating K-factors (separate for warm/cold water). Volume is integrated and resets at each 10L meter tick.
+The Hydrus meter transmits water temperature via wMBus. Water flow causes a temperature drop — a Kalman filter extracts the gradient, which is converted to flow rate using auto-calibrating K-factors (separate for warm/cold water). Volume is integrated and resets at each 10L meter tick.
 
 ## Key Features
 
@@ -15,12 +15,12 @@ Water flow causes a temperature drop in the pipe. A Kalman filter extracts the t
 
 ## Prerequisites
 
-- Temperature sensor on the water pipe (e.g., DS18B20)
-- Smart water meter (e.g., Diehl Hydrus via wMBus)
+- Diehl Hydrus water meter (or any wMBus meter with temperature)
+- RTL-SDR dongle + wmbusmeters for wMBus reception
 - Home Assistant 2024.1.0+
 
 ## Installation
 
 1. HACS → Integrations → Custom Repository → `https://github.com/hoizi89/wasser_residuum`
 2. Install, restart HA
-3. Add integration → select temperature sensor and water meter entity
+3. Add integration → select temperature and water meter entities from MQTT

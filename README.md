@@ -1,15 +1,16 @@
-# Wasser-Residuum (Temperature-Based Water Flow Detection)
+# Wasser-Residuum (wMBus Water Flow Detection)
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 [![GitHub Release](https://img.shields.io/github/release/hoizi89/wasser_residuum.svg)](https://github.com/hoizi89/wasser_residuum/releases)
 [![License](https://img.shields.io/github/license/hoizi89/wasser_residuum.svg)](LICENSE)
 
-Home Assistant integration that estimates water consumption **between 10L meter ticks** (0-9.999 L) in real time using pipe temperature monitoring and Kalman filtering.
+Home Assistant integration that estimates water consumption **between 10L meter ticks** (0-9.999 L) in real time using temperature data from a wMBus water meter and Kalman filtering.
 
 ## How It Works
 
-1. A **temperature sensor** (e.g., DS18B20) is mounted on or inside the water pipe
-2. When water flows, the pipe temperature **drops** — the rate of change (dT/dt) correlates with flow rate
+1. The **Diehl Hydrus** water meter measures the pipe temperature and transmits it via **wMBus** (868 MHz) every ~16 seconds
+2. An **RTL-SDR dongle** + **wmbusmeters** receives the data and publishes it to Home Assistant via MQTT
+3. When water flows, the pipe temperature **drops** — the rate of change (dT/dt) correlates with flow rate
 3. A **Kalman filter** smooths the temperature signal and extracts the gradient
 4. A **baseline correction** (12h window) compensates for natural ambient temperature drift
 5. The gradient is converted to flow rate using a **K-factor** (dual-K: separate values for warm and cold water, interpolated based on current temperature)
@@ -37,11 +38,12 @@ The system learns the correct K-factors automatically over time (5-10 ticks / 50
 
 | Component | Model | Notes |
 |-----------|-------|-------|
-| Temperature Sensor | **DS18B20** (waterproof probe) | Mounted on/inside the water pipe |
-| Water Meter | **Diehl Hydrus** (wMBus 868 MHz) | Sends data via wireless M-Bus |
+| Water Meter | **Diehl Hydrus** (wMBus 868 MHz) | Provides temperature + total volume via wMBus |
 | wMBus Receiver | **RTL-SDR v3** USB dongle | Receives 868 MHz wMBus telegrams |
 | wMBus Host | Any Linux box / VM | Runs wmbusmeters + the MQTT script |
 | MQTT Broker | **Mosquitto** (on Home Assistant) | Bridges meter data to HA |
+
+The Hydrus meter has a built-in temperature sensor and transmits the water temperature along with the total consumption. No additional temperature sensor is needed.
 
 The RTL-SDR dongle can be attached to any machine on your network (e.g., a Proxmox VM with USB passthrough). It does not need to be on the same device as Home Assistant.
 
@@ -52,9 +54,9 @@ Any receiver supported by [wmbusmeters](https://github.com/wmbusmeters/wmbusmete
 ## Prerequisites
 
 - Home Assistant 2024.1.0+
-- A **temperature sensor** on the water pipe (DS18B20 recommended)
-- A **water meter** with smart readout (Diehl Hydrus or any wmbusmeters-compatible meter)
-- wMBus receiver (RTL-SDR or similar) — see [wMBus Setup](#wmbus-setup)
+- A **Diehl Hydrus** water meter (or any wMBus meter that reports temperature + total volume)
+- A **wMBus receiver** (RTL-SDR v3 or similar) — see [wMBus Setup](#wmbus-setup)
+- **Mosquitto MQTT** broker (or any MQTT broker connected to HA)
 - Python `numpy` (installed automatically)
 
 ## Installation (HACS)

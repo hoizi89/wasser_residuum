@@ -119,16 +119,37 @@ The included `wmbus_pub.sh` script reads data from a **Diehl Hydrus** water mete
 
 ### Step 1: Hardware Setup
 
-Plug the **RTL-SDR dongle** into a Linux machine (or a Proxmox VM with USB passthrough). The dongle receives 868 MHz wMBus telegrams from the Hydrus meter — it broadcasts automatically every ~16 seconds.
+Plug the **RTL-SDR dongle** into a Linux machine. The dongle receives 868 MHz wMBus telegrams from the Hydrus meter — it broadcasts automatically every ~16 seconds.
+
+Any Linux host works: a Raspberry Pi, a dedicated mini-PC, or a VM. If using **Proxmox**, create a Debian 12 VM and pass through the RTL-SDR USB device:
+
+```
+Proxmox UI → VM → Hardware → Add → USB Device → select "Realtek RTL2838" (0bda:2838)
+```
+
+Verify the dongle is detected inside the VM:
+
+```bash
+lsusb | grep RTL
+# Should show: Realtek Semiconductor Corp. RTL2838
+```
 
 ### Step 2: Install wmbusmeters
 
 ```bash
 # Debian/Ubuntu
-sudo apt install -y rtl-sdr mosquitto-clients jq
+sudo apt update && sudo apt install -y rtl-sdr mosquitto-clients jq
 sudo snap install wmbusmeters
 
 # Or build from source: https://github.com/wmbusmeters/wmbusmeters
+```
+
+Verify the RTL-SDR works:
+
+```bash
+rtl_test -t
+# Should show "Found 1 device(s)" and "No E4000 tuner found, using default"
+# Press Ctrl+C to stop
 ```
 
 ### Step 3: Find Your Meter

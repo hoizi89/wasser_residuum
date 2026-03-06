@@ -1,11 +1,20 @@
 #!/bin/bash
 export LC_ALL=C
-# Erweiterter MQTT-Publisher für wmbusmeters - ALLE DATEN
+# wMBus to MQTT publisher for wmbusmeters (Diehl Hydrus)
+# Publishes meter data to Home Assistant via MQTT auto-discovery
+#
+# Usage: Called by wmbusmeters as shell hook:
+#   shell=/path/to/wmbus_pub.sh "$METER_JSON" "$METER_NAME" "$METER_ID"
+
 JSON="$1"; NAME="$2"; ID="$3"
 
 MOSQ=$(command -v mosquitto_pub)
 JQ=$(command -v jq)
-BROKER="-h 192.168.68.99 -u mqttuser -P 310192 -q 1"
+
+# --- CONFIGURE THESE ---
+BROKER="-h YOUR_HA_IP -u YOUR_MQTT_USER -P YOUR_MQTT_PASSWORD -q 1"
+# -----------------------
+
 DISC_PREFIX="homeassistant"
 DEV_ID="wmbus_${ID}"
 DEV_NAME="${NAME} (${ID})"
@@ -38,12 +47,12 @@ publish_discovery_for_key() {
   $MOSQ $BROKER -r -t "${DISC_PREFIX}/sensor/${NAME}_${SID}/config" -m "$PAYLOAD"
 }
 
-# Alle Daten aus Log extrahieren - direkt ohne BLOCK variable
+# Extract additional data from wmbusmeters log (historical volume, billing date, errors)
 extract_additional_data() {
   LOG_FILE="/var/log/wmbusmeters/wmbusmeters.log"
   [ ! -f "$LOG_FILE" ] && return
 
-  # Storage 8 Volume (049 C?) - direkt aus Log
+  # Storage 8 Volume (049 C?) - historical billing volume
   LINE_VOL=$(tail -200 "$LOG_FILE" | grep "(hydrus) 049 C" | tail -1)
   if [ -n "$LINE_VOL" ]; then
     RAW=$(echo "$LINE_VOL" | cut -d' ' -f4)
@@ -57,12 +66,11 @@ extract_additional_data() {
     fi
   fi
 
-  # Storage 8 DateTime (042 C?) - direkt aus Log
+  # Storage 8 DateTime (042 C?) - billing date (CP32 format)
   LINE_DT=$(tail -200 "$LOG_FILE" | grep "(hydrus) 042 C" | tail -1)
   if [ -n "$LINE_DT" ]; then
     RAW=$(echo "$LINE_DT" | cut -d' ' -f4)
     if [ -n "$RAW" ] && [ ${#RAW} -eq 8 ]; then
-      # CP32 datetime decode
       B0=$((16#${RAW:0:2}))
       B1=$((16#${RAW:2:2}))
       B2=$((16#${RAW:4:2}))
@@ -81,7 +89,7 @@ extract_additional_data() {
     fi
   fi
 
-  # Error flags (035 C?) - direkt aus Log
+  # Error flags (035 C?)
   LINE_ERR=$(tail -200 "$LOG_FILE" | grep "(hydrus) 035 C" | tail -1)
   if [ -n "$LINE_ERR" ]; then
     ERR_RAW=$(echo "$LINE_ERR" | cut -d' ' -f4)
@@ -96,7 +104,7 @@ extract_additional_data() {
 
 log "RUN shell for meter name=${NAME} id=${ID}"
 
-# Basis-Werte aus JSON
+# Extract base values from JSON
 if [ -n "$JQ" ]; then
   TEMP=$(echo "$JSON" | $JQ -r ".flow_temperature_c // empty")
   TOTAL_M3=$(echo "$JSON" | $JQ -r ".total_m3 // empty")
@@ -107,25 +115,25 @@ else
   TEMP=""; TOTAL_M3=""; RSSI=""; BATTERY=""; STATUS=""
 fi
 
-# Zusätzliche Daten aus Log extrahieren
+# Extract additional data from log
 HIST_VOL=""; BILLING_DATE=""; ERROR_STATUS=""
 eval $(extract_additional_data)
 HIST_M3="${HIST_VOL:-}"
 
 
-# Verbrauch seit Abrechnung
+# Calculate consumption since billing
 CONSUMPTION_M3=""
 if [ -n "$TOTAL_M3" ] && [ -n "$HIST_M3" ]; then
   CONSUMPTION_M3=$(awk "BEGIN{printf \"%.2f\", $TOTAL_M3 - $HIST_M3}")
 fi
 
-# Vorzustand laden
+# Load previous state
 LAST_TEMP=""; LAST_TOTAL_M3=""; LAST_TS=0
 [ -f "$STATE_FILE" ] && . "$STATE_FILE"
 NOW=$(date +%s)
 AGE=$((NOW - LAST_TS))
 
-# Änderungsdetektion
+# Change detection - only publish on significant changes or heartbeat
 need_publish=0
 if [ -n "$TEMP" ] && [ -n "$LAST_TEMP" ]; then
   DT=$(awk "BEGIN{t=$TEMP-$LAST_TEMP; if(t<0)t=-t; print t}")
@@ -138,7 +146,7 @@ fi
 [ "$AGE" -ge "$HEARTBEAT" ] && need_publish=1
 [ "$need_publish" -eq 1 ] && [ "$AGE" -lt "$MIN_ACTIVE_INTERVAL" ] && need_publish=0
 
-# Discovery check
+# Discovery check - re-publish every hour
 publish_discovery=0
 if [ ! -f "$DISC_STATE" ]; then
   publish_discovery=1
@@ -148,7 +156,7 @@ else
 fi
 
 if [ "$need_publish" -eq 1 ]; then
-  # JSON erweitern mit ALLEN Daten
+  # Enrich JSON with all data
   if [ -n "$JQ" ]; then
     TOTAL_L=$(awk "BEGIN{printf \"%.0f\", ${TOTAL_M3:-0} * 1000}")
     JSON=$(echo "$JSON" | $JQ -c \
@@ -169,7 +177,7 @@ if [ "$need_publish" -eq 1 ]; then
   # Publish state
   publish_state || { log "ERROR publish state"; exit 1; }
 
-  # Discovery für ALLE Sensoren
+  # Publish discovery for all sensors
   if [ "$publish_discovery" -eq 1 ]; then
     publish_discovery_for_key "total_m3" "total_m3" "Total" "m³" "water" "total_increasing" "mdi:water"
     publish_discovery_for_key "total_liters" "total_liters" "Total Liters" "L" "water" "total_increasing" "mdi:water"
@@ -185,7 +193,7 @@ if [ "$need_publish" -eq 1 ]; then
     echo "$NOW" > "$DISC_STATE"
   fi
 
-  # State speichern
+  # Save state
   printf "LAST_TS=%s\n" "$NOW" > "$STATE_FILE"
   [ -n "$TEMP" ] && printf "LAST_TEMP=%s\n" "$TEMP" >> "$STATE_FILE"
   [ -n "$TOTAL_M3" ] && printf "LAST_TOTAL_M3=%s\n" "$TOTAL_M3" >> "$STATE_FILE"

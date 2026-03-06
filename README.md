@@ -1,152 +1,159 @@
-# Wasser-Residuum (ΔT→L Kalman)
+# Wasser-Residuum (Temperature-Based Water Flow Detection)
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 [![GitHub Release](https://img.shields.io/github/release/hoizi89/wasser_residuum.svg)](https://github.com/hoizi89/wasser_residuum/releases)
 [![License](https://img.shields.io/github/license/hoizi89/wasser_residuum.svg)](LICENSE)
 
-Misst den Wasserverbrauch **zwischen 10L-Zählerticks** (0-9.9999L) in Echtzeit durch Temperaturüberwachung.
+Home Assistant integration that estimates water consumption **between 10L meter ticks** (0-9.999 L) in real time using pipe temperature monitoring and Kalman filtering.
 
-## Was macht die Integration?
+## How It Works
 
-Dein Wasserzähler zählt nur in 10L-Schritten? Diese Integration zeigt dir den **aktuellen Verbrauch bis zum nächsten Tick** an!
+1. A **temperature sensor** (e.g., DS18B20) is mounted on or inside the water pipe
+2. When water flows, the pipe temperature **drops** — the rate of change (dT/dt) correlates with flow rate
+3. A **Kalman filter** smooths the temperature signal and extracts the gradient
+4. A **baseline correction** (12h window) compensates for natural ambient temperature drift
+5. The gradient is converted to flow rate using a **K-factor** (dual-K: separate values for warm and cold water, interpolated based on current temperature)
+6. Flow rate is integrated over time to calculate **volume** (liters)
+7. At every **10L tick** from the water meter, the integration auto-calibrates its K-factors and resets
 
-**Prinzip**: Wasserfluss → Temperaturabfall → Durchflussberechnung
+### Anti-Drift Protection
 
-**Genauigkeit**: 0-9.9999 Liter zwischen den fixen 10L-Ticks
+- **Night mode** (22:00-06:00): 5x stricter thresholds to prevent false detections from overnight cooling
+- **Deep sleep** (>2h idle): 3x stricter thresholds
+- **Flow consistency**: Requires 3 consecutive measurements above threshold before counting
+- **Variance detection**: Additional cold-weather flow detection via temperature variance analysis
 
-## 🆕 Version 0.3.0 - Anti-Nacht-Drift
+### Auto-Calibration Formula
 
-**Problem gelöst**: Keine falschen Zapfungen mehr durch Nacht-Abkühlung!
-- 🌙 Nacht-Modus (22:00-06:00) - 5x strengere Schwellwerte
-- 😴 Deep-Sleep (>2h Ruhe) - 3x strengere Schwellwerte
-- ✅ Flow-Konsistenz - 3 aufeinanderfolgende Messungen nötig
-
-## 🎯 Features
-
-- **Echtzeit**: Sofortige Anzeige, keine Wartezeit auf Zählerticks
-- **Auto-Kalibrierung**: Lernt bei jedem 10L-Tick automatisch
-- **Dual-K**: Unterscheidet zwischen warmem und kaltem Wasser
-- **Nacht-sicher**: Keine falschen Zapfungen durch Temperatur-Drift
-
-## 📋 Voraussetzungen
-
-- Home Assistant 2024.1.0 oder neuer
-- Ein **Temperatursensor** in der Wasserleitung (z.B. DS18B20)
-- Ein **Wasserzähler** mit Smart Meter Auslesen (z.B. Hydrus mit ESPHome/wMBus)
-- Python-Paket `numpy` (wird automatisch installiert)
-
-## 🔧 Installation
-
-### Via HACS (empfohlen)
-
-1. Öffne HACS in Home Assistant
-2. Klicke auf "Integrations"
-3. Klicke auf die drei Punkte oben rechts und wähle "Custom repositories"
-4. Füge die Repository-URL hinzu: `https://github.com/yourusername/wasser_residuum`
-5. Kategorie: "Integration"
-6. Klicke auf "Hinzufügen"
-7. Suche nach "Wasser-Residuum" und klicke auf "Download"
-8. Starte Home Assistant neu
-
-### Manuelle Installation
-
-1. Lade die neueste Version von [Releases](https://github.com/yourusername/wasser_residuum/releases) herunter
-2. Entpacke das Archiv
-3. Kopiere den Ordner `custom_components/wasser_residuum` nach `<config>/custom_components/`
-4. Starte Home Assistant neu
-
-## ⚙️ Konfiguration
-
-1. **Einstellungen** → **Geräte & Dienste** → **+ Integration hinzufügen**
-2. Suche nach **Wasser-Residuum**
-3. Wähle:
-   - **Temperatursensor** (z.B. DS18B20 in der Leitung)
-   - **Wasserzähler** (z.B. Hydrus)
-   - **Einheit**: m³ oder L
-
-4. **Fertig!** Die Kalibrierung läuft automatisch.
-
-### Optionale Anpassung
-
-Die Standardwerte funktionieren gut. Bei Bedarf über **Optionen** anpassen:
-
-| Parameter | Standard | Beschreibung |
-|-----------|----------|--------------|
-| **K-Warm** | 4.0 | Umrechnungsfaktor warm (≥16°C) - **lernt automatisch!** |
-| **K-Cold** | 8.0 | Umrechnungsfaktor kalt (≤12°C) - **lernt automatisch!** |
-| **T-Warm/T-Cold** | 16°C / 12°C | Temperatur-Grenzen für Interpolation |
-| **Max. Residuum** | 10.0 L | Obergrenze (sollte bei 10L bleiben) |
-
-## 📊 Wichtigste Sensoren
-
-### Was du ansehen solltest:
-- **`sensor.wasser_residuum_residuum`** → **0-9.9999L bis nächster Tick** 🎯
-- `sensor.wasser_residuum_last_flow` → Aktueller Durchfluss (L/min)
-- `sensor.wasser_residuum_night_mode` → Nacht-Modus Status
-- `sensor.wasser_residuum_k_active` → Aktiver K-Faktor + Attribute (K-Warm/K-Cold Werte)
-
-### Diagnose (falls was nicht stimmt):
-- `sensor.wasser_residuum_last_dt_dt` → Temperaturgradient + Schwellwert
-- `sensor.wasser_residuum_deep_sleep` → Sleep-Modus Status
-- `sensor.wasser_residuum_temp_filtered` → Gefilterte Temperatur
-- `sensor.wasser_residuum_uncertainty` → Messunsicherheit
-
-### Anpassbar:
-- `number.wasser_residuum_k_warm` / `k_cold` → Manuell ändern (oder Auto-Kalibrierung nutzen!)
-- `button.wasser_residuum_reset` → Reset bei Problemen
-
-## 🎯 Wie funktioniert's?
-
-1. **Temperatur fällt** bei Wasserfluss → Kalman-Filter erkennt Gradient
-2. **Baseline-Korrektur** → Kompensiert natürliche Nacht-Abkühlung
-3. **K-Faktor** → Rechnet Temperatur-Gradient in L/min um (warm vs. kalt)
-4. **Integration** → Summiert auf bis 10L
-5. **10L-Tick** → Automatische Kalibrierung, Reset auf 0
-
-**Auto-Kalibrierung**:
+At every 10L tick from the water meter:
 ```
-Bei jedem 10L-Tick: K_neu = K_alt × (10.0 / Thermal_gemessen)
+K_new = K_old * (10.0 / thermal_volume_measured)
 ```
-→ System lernt automatisch die richtigen Werte!
+The system learns the correct K-factors automatically over time (5-10 ticks / 50-100 L).
 
-## 📈 Beispiel-Dashboard
+## Hardware
 
-```yaml
-type: gauge
-entity: sensor.wasser_residuum_residuum
-min: 0
-max: 10
-name: Liter bis 10L-Tick
-needle: true
-segments:
-  - from: 0
-    color: "#0da035"
-  - from: 7
-    color: "#e0b400"
-  - from: 9
-    color: "#db4437"
-```
+### Tested Setup
 
-## 🔍 Troubleshooting
+| Component | Model | Notes |
+|-----------|-------|-------|
+| Temperature Sensor | **DS18B20** (waterproof probe) | Mounted on/inside the water pipe |
+| Water Meter | **Diehl Hydrus** (wMBus 868 MHz) | Sends data via wireless M-Bus |
+| wMBus Receiver | **RTL-SDR v3** USB dongle | Receives 868 MHz wMBus telegrams |
+| wMBus Host | Any Linux box / VM | Runs wmbusmeters + the MQTT script |
+| MQTT Broker | **Mosquitto** (on Home Assistant) | Bridges meter data to HA |
 
-### Residuum steigt nachts ohne Zapfung
-✅ **Gelöst in v0.3.0!** Nacht-Modus und Deep-Sleep verhindern das automatisch.
-- Prüfe: `sensor.wasser_residuum_night_mode` und `deep_sleep`
-- Falls noch Probleme: Nacht-Zeitfenster in `__init__.py:143` anpassen
+The RTL-SDR dongle can be attached to any machine on your network (e.g., a Proxmox VM with USB passthrough). It does not need to be on the same device as Home Assistant.
 
-### K-Faktoren passen nicht
-🤖 **Auto-Kalibrierung läuft!** Warte 5-10 Ticks (50-100L), dann sollten die Werte stimmen.
-- Manuell anpassen: `number.wasser_residuum_k_warm` / `k_cold`
-- Typische Werte: K-Warm 3-5, K-Cold 6-9
+### Alternative Receivers
 
-### Flow wird nicht erkannt
-🔧 **Sensor-Position prüfen!** Muss direkten Wasserkontakt haben.
-- Prüfe: `sensor.wasser_residuum_last_dt_dt` (sollte < -0.03 K/min bei Flow)
-- Sensor-Rate: Mindestens 1x/Minute
+Any receiver supported by [wmbusmeters](https://github.com/wmbusmeters/wmbusmeters) works: CUL, IM871A-USB, AMB8465-M, or RTL-SDR.
 
-## 📝 Logs
+## Prerequisites
 
-Aktiviere Debug-Logging für detaillierte Ausgaben:
+- Home Assistant 2024.1.0+
+- A **temperature sensor** on the water pipe (DS18B20 recommended)
+- A **water meter** with smart readout (Diehl Hydrus or any wmbusmeters-compatible meter)
+- wMBus receiver (RTL-SDR or similar) — see [wMBus Setup](#wmbus-setup)
+- Python `numpy` (installed automatically)
+
+## Installation (HACS)
+
+1. Open HACS → Integrations
+2. Three-dot menu → Custom repositories
+3. URL: `https://github.com/hoizi89/wasser_residuum`, Category: Integration
+4. Install "Wasser-Residuum"
+5. Restart Home Assistant
+
+### Manual Installation
+
+Copy `custom_components/wasser_residuum` to your HA `custom_components/` directory and restart.
+
+## Configuration
+
+1. Settings → Devices & Services → Add Integration
+2. Search for "Wasser-Residuum"
+3. Select your **temperature sensor** entity and **water meter total** entity
+4. Optionally select Last Sync and RSSI entities (from wMBus)
+5. Choose unit (m³ or L)
+
+### Options
+
+Adjustable via integration options (defaults work well, auto-calibration adjusts over time):
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| K-Warm | 4.0 | Conversion factor for warm water (>=16°C) — auto-learns |
+| K-Cold | 8.0 | Conversion factor for cold water (<=12°C) — auto-learns |
+| T-Warm / T-Cold | 16°C / 12°C | Temperature boundaries for K interpolation |
+| Clip | 2.5 | Maximum dT/dt clipping value |
+| Max Residuum | 10.0 L | Reset interval (matches meter resolution) |
+
+## Sensors
+
+| Sensor | Description |
+|--------|-------------|
+| Residuum | Volume since last reset, 0-10 L (main sensor) |
+| Flow | Current estimated flow rate (L/min) |
+| Volume | Cumulative total volume (L), persists across restarts |
+| K Active | Currently used K-factor with warm/cold values in attributes |
+| Night Mode | Whether night mode is active |
+| Deep Sleep | Whether deep sleep mode is active |
+| Temp Filtered | Kalman-filtered pipe temperature |
+| dT Used | Current temperature gradient used for calculation |
+| Uncertainty | Current measurement uncertainty estimate |
+
+## wMBus Setup
+
+The included `wmbus_pub.sh` script reads data from a **Diehl Hydrus** water meter via [wmbusmeters](https://github.com/wmbusmeters/wmbusmeters) and publishes it to Home Assistant via MQTT auto-discovery.
+
+### What It Does
+
+1. Receives JSON data from wmbusmeters (called as a shell hook on each telegram)
+2. Extracts: total consumption (m³), water temperature, battery life, RSSI
+3. Parses additional data from wmbusmeters log: historical billing volume, billing date, error flags
+4. Publishes everything to MQTT with Home Assistant auto-discovery config
+5. Rate-limits updates: publishes only on significant changes (temperature >0.05°C or volume >0.001 m³) or every 60s heartbeat
+
+### Setup
+
+1. Install [wmbusmeters](https://github.com/wmbusmeters/wmbusmeters) with an RTL-SDR or CUL dongle
+2. Copy `wmbus_pub.sh` to your wmbusmeters host
+3. Edit the script — set your MQTT broker address and credentials:
+   ```bash
+   BROKER="-h YOUR_HA_IP -u YOUR_MQTT_USER -P YOUR_MQTT_PASSWORD -q 1"
+   ```
+4. Configure wmbusmeters to call the script:
+   ```ini
+   # /etc/wmbusmeters.d/your_meter
+   name=hydrus
+   id=YOUR_METER_ID
+   key=YOUR_METER_KEY
+   type=hydrus
+   shell=/path/to/wmbus_pub.sh "$METER_JSON" "$METER_NAME" "$METER_ID"
+   ```
+5. The script auto-creates sensors in Home Assistant via MQTT discovery
+
+### Created MQTT Sensors
+
+| Sensor | Unit | Description |
+|--------|------|-------------|
+| Total | m³ | Total water consumption |
+| Total Liters | L | Same in liters |
+| Water Temperature | °C | Current pipe temperature |
+| Battery Life | years | Remaining meter battery |
+| Signal Strength | dBm | wMBus RSSI |
+| Last Billing Reading | m³ | Historical volume at billing date |
+| Consumption Since Billing | m³ | Current - historical |
+| Billing Date | — | Date of last billing reading |
+| Meter Status | — | Error flags (OK or error code) |
+| Last Sync | — | Timestamp of last received telegram |
+
+## Related
+
+Pairs well with [wasser_vibration](https://github.com/hoizi89/wasser_vibration) which uses vibration-based flow detection as an alternative/complementary approach.
+
+## Debug Logging
 
 ```yaml
 logger:
@@ -155,24 +162,6 @@ logger:
     custom_components.wasser_residuum: debug
 ```
 
-## 📋 Changelog
-
-### v0.3.0 - Anti-Nacht-Drift
-- Nacht-Modus + Deep-Sleep mit adaptiven Schwellwerten
-- Flow-Konsistenz-Check (3x aufeinanderfolgend)
-- Gradient-Geschwindigkeit (d²T/dt²) Filter
-- Neue Diagnose-Sensoren: Night Mode, Deep Sleep
-- Code-Aufräumung: Idle-Boost, Alpha, Window_s entfernt
-
-### v0.2.0 - Auto-Kalibrierung
-- Dual-K Interpolation (warm/kalt)
-- Auto-Kalibrierung bei 10L-Ticks
-- Baseline-Korrektur (12h-Fenster)
-
-### v0.1.0 - Initial
-- Kalman-Filter Flow-Detektion
-- Config Flow UI
-
 ---
 
-**Hinweis**: Experimentelles Projekt für Hobby-Nutzung. Für Abrechnungen nur geeichte Zähler verwenden!
+Experimental hobby project. Use calibrated meters for billing purposes.

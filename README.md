@@ -139,7 +139,9 @@ Run wmbusmeters in listen mode to discover nearby meters:
 wmbusmeters --listento=t1 auto:t1
 ```
 
-Look for your Hydrus meter in the output. Note the **meter ID** (8-digit number printed on the meter). The **decryption key** is provided by your water utility — contact them and ask for the wMBus AES key.
+Look for your Hydrus meter in the output. Note the **meter ID** (8-digit number printed on the meter).
+
+Many Hydrus meters transmit **unencrypted** — no AES key needed. If the data in Step 3 shows readable values (temperature, total volume), you're good. If the output shows encrypted/empty data, contact your water utility and ask for the wMBus AES decryption key.
 
 ### Step 4: Configure wmbusmeters
 
@@ -153,7 +155,7 @@ sudo nano /etc/wmbusmeters.d/hydrus
 name=hydrus
 driver=hydrus
 id=YOUR_METER_ID
-key=YOUR_AES_KEY
+# key=YOUR_AES_KEY  # Only needed if meter data is encrypted. Omit this line if unencrypted.
 ```
 
 Configure the main wmbusmeters settings:

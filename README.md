@@ -115,24 +115,83 @@ The included `wmbus_pub.sh` script reads data from a **Diehl Hydrus** water mete
 4. Publishes everything to MQTT with Home Assistant auto-discovery config
 5. Rate-limits updates: publishes only on significant changes (temperature >0.05°C or volume >0.001 m³) or every 60s heartbeat
 
-### Setup
+### Step 1: Hardware Setup
 
-1. Install [wmbusmeters](https://github.com/wmbusmeters/wmbusmeters) with an RTL-SDR or CUL dongle
-2. Copy `wmbus_pub.sh` to your wmbusmeters host
+Plug the **RTL-SDR dongle** into a Linux machine (or a Proxmox VM with USB passthrough). The dongle receives 868 MHz wMBus telegrams from the Hydrus meter — it broadcasts automatically every ~16 seconds.
+
+### Step 2: Install wmbusmeters
+
+```bash
+# Debian/Ubuntu
+sudo apt install -y rtl-sdr mosquitto-clients jq
+sudo snap install wmbusmeters
+
+# Or build from source: https://github.com/wmbusmeters/wmbusmeters
+```
+
+### Step 3: Find Your Meter
+
+Run wmbusmeters in listen mode to discover nearby meters:
+
+```bash
+wmbusmeters --listento=t1 auto:t1
+```
+
+Look for your Hydrus meter in the output. Note the **meter ID** (8-digit number printed on the meter). The **decryption key** is provided by your water utility — contact them and ask for the wMBus AES key.
+
+### Step 4: Configure wmbusmeters
+
+Create a meter config file:
+
+```bash
+sudo nano /etc/wmbusmeters.d/hydrus
+```
+
+```ini
+name=hydrus
+driver=hydrus
+id=YOUR_METER_ID
+key=YOUR_AES_KEY
+```
+
+Configure the main wmbusmeters settings:
+
+```bash
+sudo nano /etc/wmbusmeters.conf
+```
+
+```ini
+loglevel=normal
+device=auto:t1
+logtelegrams=false
+format=json
+shell=/path/to/wmbus_pub.sh "$METER_JSON" "$METER_NAME" "$METER_ID"
+```
+
+### Step 5: Set Up MQTT Publishing
+
+1. Copy `wmbus_pub.sh` to your wmbusmeters host (e.g., `/opt/wmbus_pub.sh`)
+2. Make it executable: `chmod +x /opt/wmbus_pub.sh`
 3. Edit the script — set your MQTT broker address and credentials:
    ```bash
    BROKER="-h YOUR_HA_IP -u YOUR_MQTT_USER -P YOUR_MQTT_PASSWORD -q 1"
    ```
-4. Configure wmbusmeters to call the script:
-   ```ini
-   # /etc/wmbusmeters.d/your_meter
-   name=hydrus
-   id=YOUR_METER_ID
-   key=YOUR_METER_KEY
-   type=hydrus
-   shell=/path/to/wmbus_pub.sh "$METER_JSON" "$METER_NAME" "$METER_ID"
-   ```
-5. The script auto-creates sensors in Home Assistant via MQTT discovery
+
+### Step 6: Start and Verify
+
+```bash
+sudo systemctl restart wmbusmeters
+sudo journalctl -u wmbusmeters -f
+```
+
+You should see JSON telegrams arriving every ~16 seconds. The script auto-creates sensors in Home Assistant via MQTT discovery — check Settings → Devices & Services → MQTT for the new device.
+
+### Troubleshooting wMBus
+
+- **No telegrams**: Check RTL-SDR connection (`rtl_test`), ensure 868 MHz reception (T1 mode)
+- **Encrypted data**: You need the correct AES key from your water utility
+- **No MQTT sensors**: Verify mosquitto_pub works: `mosquitto_pub -h YOUR_HA_IP -u USER -P PASS -t test -m hello`
+- **Weak signal**: The Hydrus transmits at low power — keep the RTL-SDR within ~10-20m of the meter
 
 ### Created MQTT Sensors
 
